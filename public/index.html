@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VATSIM Gate Finder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #0f172a; color: #f8fafc; font-family: sans-serif; }
+  </style>
+</head>
+<body class="min-h-screen p-6 flex flex-col items-center">
+
+  <div class="max-w-3xl w-full">
+    <!-- Header -->
+    <header class="text-center my-8">
+      <h1 class="text-4xl font-extrabold tracking-tight text-blue-400">VATSIM Gate Finder</h1>
+      <p class="text-slate-400 mt-2">Finde freie & zur Airline passende Gates in Echtzeit</p>
+    </header>
+
+    <!-- Suche Card -->
+    <div class="bg-slate-800 border border-slate-700 p-6 rounded-xl shadow-xl mb-8">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        
+        <!-- Flughafen -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Flughafen (ICAO)</label>
+          <select id="airportSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-blue-500">
+            <option value="">Lade Flughäfen...</option>
+          </select>
+        </div>
+
+        <!-- Flugzeugtyp -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Flugzeugtyp</label>
+          <select id="aircraftSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-blue-500">
+            <option value="">Lade Typen...</option>
+          </select>
+        </div>
+
+        <!-- Airline -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Airline (ICAO)</label>
+          <input type="text" id="airlineInput" placeholder="z. B. DLH, EJU, UAE" maxlength="3" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white uppercase focus:outline-none focus:border-blue-500" />
+        </div>
+
+      </div>
+
+      <button id="searchBtn" class="w-full mt-6 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition duration-200">
+        Freies Gate suchen
+      </button>
+    </div>
+
+    <!-- Ergebnisse -->
+    <div id="resultsContainer" class="hidden">
+      <h2 class="text-xl font-bold text-slate-200 mb-4">Ergebnisse</h2>
+      <div id="resultsList" class="space-y-3"></div>
+    </div>
+  </div>
+
+  <script>
+    const airportSelect = document.getElementById('airportSelect');
+    const aircraftSelect = document.getElementById('aircraftSelect');
+    const airlineInput = document.getElementById('airlineInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const resultsList = document.getElementById('resultsList');
+
+    // Config vom Server laden
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+
+        airportSelect.innerHTML = data.airports.map(ap => `<option value="${ap}">${ap}</option>`).join('');
+        aircraftSelect.innerHTML = data.aircraftTypes.map(ac => `<option value="${ac}">${ac}</option>`).join('');
+      } catch (err) {
+        alert('Fehler beim Verbinden mit dem Server.');
+      }
+    }
+
+    // Gate Suche
+    async function searchGates() {
+      const airport = airportSelect.value;
+      const aircraft = aircraftSelect.value;
+      const airline = airlineInput.value.trim().toUpperCase();
+
+      searchBtn.innerText = 'Prüfe VATSIM Live-Daten...';
+      searchBtn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/find-gate?airport=${airport}&aircraftType=${aircraft}&airline=${airline}`);
+        const data = await res.json();
+
+        resultsContainer.classList.remove('hidden');
+        resultsList.innerHTML = '';
+
+        if (!data.gates || data.gates.length === 0) {
+          resultsList.innerHTML = '<div class="p-4 bg-slate-800 rounded-lg text-slate-400">Keine Gates für diesen Flughafen hinterlegt.</div>';
+          return;
+        }
+
+        // Sortierung: Perfekte Matches nach oben
+        const sortedGates = data.gates.sort((a, b) => b.isPerfectMatch - a.isPerfectMatch);
+
+        sortedGates.forEach(gate => {
+          const isOccupied = gate.isOccupied;
+          const isMatch = gate.isPerfectMatch;
+
+          let statusBadge = '';
+          let bgStyle = 'bg-slate-800 border-slate-700';
+
+          if (isOccupied) {
+            statusBadge = `<span class="bg-red-900/60 text-red-300 text-xs px-2.5 py-1 rounded-full border border-red-700">Belegt von ${gate.occupiedByCallsign}</span>`;
+            bgStyle = 'bg-slate-900/50 border-slate-800 opacity-60';
+          } else if (isMatch) {
+            statusBadge = `<span class="bg-emerald-900/60 text-emerald-300 text-xs px-2.5 py-1 rounded-full border border-emerald-700">Perfekter Match</span>`;
+            bgStyle = 'bg-emerald-950/20 border-emerald-800/50';
+          } else {
+            statusBadge = `<span class="bg-yellow-900/60 text-yellow-300 text-xs px-2.5 py-1 rounded-full border border-yellow-700">Frei (Kategorie/Airline weicht ab)</span>`;
+          }
+
+          const html = `
+            <div class="p-4 rounded-xl border flex items-center justify-between ${bgStyle}">
+              <div>
+                <div class="font-bold text-lg text-white">${gate.name}</div>
+                <div class="text-xs text-slate-400 mt-0.5">
+                  Max. Cat: <span class="text-slate-200 font-semibold">${gate.category}</span> | 
+                  Airlines: <span class="text-slate-200 font-semibold">${gate.airlines.join(', ')}</span>
+                </div>
+              </div>
+              <div>${statusBadge}</div>
+            </div>
+          `;
+          resultsList.insertAdjacentHTML('beforeend', html);
+        });
+
+      } catch (err) {
+        alert('Fehler beim Abrufen der Gates.');
+      } finally {
+        searchBtn.innerText = 'Freies Gate suchen';
+        searchBtn.disabled = false;
+      }
+    }
+
+    searchBtn.addEventListener('click', searchGates);
+    loadConfig();
+  </script>
+</body>
+</html>
