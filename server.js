@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -7,19 +8,19 @@ const PORT = process.env.PORT || 10000;
 app.use(express.static(__dirname));
 app.use(express.json());
 
-// Arbeitsspeicher-Cache
 const gateCache = new Map();
 
-// ==========================================
-// HAUPTSEITE (INDEX.HTML AUSLIEFERN)
-// ==========================================
+// Hauptseite ausliefern mit Absicherung
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    const indexPath = path.join(__dirname, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).send('<h2>index.html wurde im Hauptordner auf GitHub nicht gefunden. Bitte erstelle die Datei index.html!</h2>');
+    }
 });
 
-// ==========================================
-// GATE-ABFRAGE API
-// ==========================================
+// API Route
 app.get('/api/gates', async (req, res) => {
     const icao = req.query.icao ? req.query.icao.toUpperCase().trim() : null;
 
@@ -27,18 +28,13 @@ app.get('/api/gates', async (req, res) => {
         return res.status(400).json({ error: 'Bitte gib einen gültigen ICAO-Code ein (z.B. EDDF, LDSP).' });
     }
 
-    // 1. Aus dem Cache laden
     if (gateCache.has(icao)) {
-        console.log(`[CACHE] Daten für ${icao} direkt geliefert.`);
         return res.json(gateCache.get(icao));
     }
 
     try {
-        // 2. Genaues Zentrum des Flughafens via Nominatim bestimmen
         const geoUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(icao)}&format=json&limit=1`;
-        const geoRes = await fetch(geoUrl, {
-            headers: { 'User-Agent': 'VATSIM-Gate-Finder-App/1.0' }
-        });
+        const geoRes = await fetch(geoUrl, { headers: { 'User-Agent': 'VATSIM-Gate-Finder-App/1.0' } });
         const geoData = await geoRes.json();
 
         if (!geoData || geoData.length === 0) {
@@ -48,7 +44,6 @@ app.get('/api/gates', async (req, res) => {
         const lat = geoData[0].lat;
         const lon = geoData[0].lon;
 
-        // 3. Overpass Radius-Suche um die GPS-Koordinaten (3,5 km Umkreis)
         const query = `
             [out:json][timeout:15];
             (
@@ -87,21 +82,13 @@ app.get('/api/gates', async (req, res) => {
                     rawData = await response.json();
                     if (rawData && rawData.elements) break;
                 }
-            } catch (e) {
-                // Nächsten Server probieren
-            }
+            } catch (e) {}
         }
 
         if (!rawData || !rawData.elements || rawData.elements.length === 0) {
-            return res.status(404).json({
-                error: `Keine Gate-Daten für ${icao} gefunden.`,
-                icao: icao,
-                total_gates: 0,
-                gates: []
-            });
+            return res.status(404).json({ error: `Keine Gate-Daten für ${icao} gefunden.` });
         }
 
-        // 4. Daten filtern und sortieren
         const gates = rawData.elements
             .map(item => ({
                 name: item.tags?.ref || item.tags?.name || 'Unbenannt',
@@ -113,21 +100,14 @@ app.get('/api/gates', async (req, res) => {
 
         gates.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
-        const result = {
-            icao: icao,
-            total_gates: gates.length,
-            gates: gates
-        };
+        const result = { icao: icao, total_gates: gates.length, gates: gates };
 
-        if (gates.length > 0) {
-            gateCache.set(icao, result);
-        }
+        if (gates.length > 0) gateCache.set(icao, result);
 
         return res.json(result);
 
     } catch (err) {
-        console.error(err);
-        return res.status(500).json({ error: 'Fehler beim Laden der Flughafen-Daten.' });
+        return res.status(500).json({ error: 'Fehler beim Laden der Daten.' });
     }
 });
 
