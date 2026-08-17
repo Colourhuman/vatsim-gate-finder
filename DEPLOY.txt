@@ -1,5 +1,5 @@
-V8 DEPLOY
-----------
+V9 deployment
+--------------
 Replace:
 - server.js
 - index.html
@@ -9,13 +9,11 @@ Replace:
 No gates.json required.
 
 Render:
-Build Command = npm install
-Start Command = npm start
+Build = npm install
+Start = npm start
 
-After deploy:
+Test:
 GET /api/health
-GET /api/gates?icao=EDDK&airline=EWG&aircraft=A320
+GET /api/gates?icao=EGLL&airline=BAW&aircraft=A320
 
-If a gate looks wrong, inspect:
-position: parking_position_way_endpoint / parking_position_node
-and the occupant distance shown on the card.
+Debug is in JSON response.

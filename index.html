@@ -234,7 +234,7 @@ function renderCards(){
       ${badge}
       <div class="rows">
         <div class="row"><b>Gate-Airline:</b> ${airline}</div>
-        <div class="row"><b>Gate-Größe:</b> ${size}</div><div class="row"><b>Position:</b> ${esc(g.anchorType||"nicht gefunden")}${g.occupant?` · ${esc(g.occupant.distanceM)} m`: " "}</div>
+        <div class="row"><b>Gate-Größe:</b> ${size}</div>
         <div class="row"><b>Deine Auswahl:</b> ${esc(aircraftLabel(g))}</div>
       </div>
       ${occ}
@@ -287,7 +287,7 @@ async function searchGates(){
       `<span class="pill">${esc(ac?.name||"Alle Aircraft")}${ac?.icao?` (${esc(ac.icao)})`:""}</span>`;
 
     const stamp=data.vatsimUpdatedAt?new Date(data.vatsimUpdatedAt).toLocaleTimeString("de-DE"):"—";
-    $("status").innerText=`VATSIM-Daten: ${stamp} · ${data.gates.length} Positionen`;
+    $("status").innerText=`VATSIM: ${stamp} · ${data.gates.length} Positionen · ${data.debug?.assignedAircraft||0} belegt`;
 
     renderCards();
   }catch(err){

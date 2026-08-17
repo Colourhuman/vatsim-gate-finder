@@ -1,39 +1,46 @@
-# VATSIM Gate Finder v8
+# VATSIM Gate Finder v9
 
-## Why v8
+## Main fix
 
-The critical previous bug was that v7 ignored OSM `aeroway=parking_position`
-ways. OSM documents that parking positions can be mapped as nodes OR ways,
-and for a way the last node is the nose-wheel stop position.
+v8 still assumed a small area around the airport reference point. That is not
+safe for large airports like Heathrow.
 
-v8 parses:
-- parking_position nodes
-- parking_position ways
-- gate nodes
-- gate ways
+v9 first resolves the airport's real OpenStreetMap bounding box through
+Nominatim, then tiles the COMPLETE airport bbox and reads all OSM
+`parking_position` nodes and ways.
 
-For parking_position ways, the final member node is used as the physical stand
+For parking-position ways the final member node is used as the nose-wheel stop
 anchor.
 
-## Occupancy model
+## Occupancy
 
-VATSIM positions are checked against the physical parking-position anchor, not
-the passenger terminal gate marker.
+The VATSIM aircraft is considered at the airport based on spatial position,
+NOT only on the flight-plan arrival/departure.
 
-Approximate tolerance:
-- stopped: aircraft-size-aware, 45m minimum
-- slow movement: 34m
-- taxiing: 18m
+This fixes missing aircraft with:
+- changed/incorrect flightplans
+- blank flightplan airport fields
+- unusual/virtual callsigns
 
-A one-to-one assignment prevents one aircraft from occupying multiple stands.
+Flightplan departure/arrival is only used as a sanity filter for fast-moving
+aircraft outside the airport.
 
-## Sources
+Every VATSIM aircraft is assigned to at most one physical stand.
 
-- VATSIM public Data API v3 for live lat/lon/groundspeed/aircraft_short/flightplan
-- IFATC for gate list and size class
-- OpenStreetMap API for exact physical parking-position anchors
+Radii:
+- stopped: 55 m
+- 0-8 kt: 34 m
+- >8 kt taxi: 18 m
 
-No gates.json required.
+## Debug
+
+`/api/gates?icao=EGLL`
+
+The JSON includes:
+- `VATSIMAircraftInsideAirportBounds`
+- `assignedAircraft`
+- exact gate assignments with aircraft position and distance
+- number of physical gate anchors
 
 ## Render
 
@@ -43,7 +50,4 @@ npm install
 Start:
 npm start
 
-Debug:
-GET /api/health
-GET /api/gates?icao=EDDK&airline=EWG&aircraft=A320
-GET /api/refresh/EDDK
+No Overpass and no gates.json are required.
