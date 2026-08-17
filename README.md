@@ -1,28 +1,32 @@
-# VATSIM Gate Finder STABLE
+# VATSIM Gate Finder STABLE-6
 
-## Fix for "This operation was aborted"
+## Key change
 
-The old build used the HPI Overpass proxy and aborted after 8.5 seconds.
-This build removes that dependency.
+This build no longer depends on Overpass.
 
-Gate lookup now:
-- uses the airport `icao` relation/area directly
-- queries only OSM `gate` and `parking_position` nodes
-- uses POST
-- runs the global Private.coffee and overpass-api.de instances in parallel
-- accepts the first useful response
-- caches airport gate data for 7 days
+Gate metadata:
+- IFATC gate list: gate/stand names and aircraft width class A-F
+- OpenStreetMap standard Map API: node coordinates for `aeroway=gate` and `aeroway=parking_position`
+- VATSIM Data API v3: live occupancy
 
-Private.coffee explicitly documents its Overpass endpoint for application use and recommends POST for queries. The public Overpass directory lists it and overpass-api.de as global instances.
-
-VATSIM occupancy remains separate and is updated independently.
+OSM is accessed with small bbox tiles around the airport instead of Overpass.
+The airport never fails solely because an Overpass instance is unavailable.
 
 ## Render
 
-Build Command:
+Build:
 npm install
 
-Start Command:
+Start:
 npm start
 
-No environment variables are required.
+No special environment variables required.
+
+## Notes
+
+IFATC does not provide a universal current airline-to-stand mapping. The finder
+therefore never invents one. Airline is retained as the selected operating
+context while aircraft compatibility is checked from the IFATC A-F gate class.
+
+VATSIM occupancy is inferred from aircraft position + flightplan departure/arrival
++ ground speed. Each VATSIM pilot can occupy only one gate.

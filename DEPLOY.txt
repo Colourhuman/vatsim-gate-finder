@@ -1,19 +1,17 @@
-DEPLOY
-------
+Deploy Stable-6
+================
 Replace:
 - server.js
 - index.html
 - package.json
 - README.md
 
-KEEP any other project assets you already have.
-
 Render:
 Build Command: npm install
 Start Command: npm start
 
-After deploy:
-1. /api/health
-2. /api/gates?icao=EDDK&airline=EWG&aircraft=A320
+Test after deploy:
+https://YOUR-SERVICE.onrender.com/api/health
+https://YOUR-SERVICE.onrender.com/api/gates?icao=EDDK&airline=EWG&aircraft=A320
 
-The STABLE server no longer uses the HPI proxy.
+This version has NO Overpass dependency.
