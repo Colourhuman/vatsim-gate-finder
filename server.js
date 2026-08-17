@@ -10,6 +10,16 @@ app.use(express.json());
 // Arbeitsspeicher-Cache
 const gateCache = new Map();
 
+// ==========================================
+// HAUPTSEITE (INDEX.HTML AUSLIEFERN)
+// ==========================================
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// ==========================================
+// GATE-ABFRAGE API
+// ==========================================
 app.get('/api/gates', async (req, res) => {
     const icao = req.query.icao ? req.query.icao.toUpperCase().trim() : null;
 
@@ -17,7 +27,7 @@ app.get('/api/gates', async (req, res) => {
         return res.status(400).json({ error: 'Bitte gib einen gültigen ICAO-Code ein (z.B. EDDF, LDSP).' });
     }
 
-    // 1. Aus dem Cache laden (0,01 Sekunden!)
+    // 1. Aus dem Cache laden
     if (gateCache.has(icao)) {
         console.log(`[CACHE] Daten für ${icao} direkt geliefert.`);
         return res.json(gateCache.get(icao));
@@ -91,7 +101,7 @@ app.get('/api/gates', async (req, res) => {
             });
         }
 
-        // 4. Daten filtern und alphabetisch/numerisch sortieren
+        // 4. Daten filtern und sortieren
         const gates = rawData.elements
             .map(item => ({
                 name: item.tags?.ref || item.tags?.name || 'Unbenannt',
