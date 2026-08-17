@@ -1,246 +1,142 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VATSIM Gate Finder</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-        body { background-color: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; min-height: 100vh; }
-        .container { width: 100%; max-width: 900px; }
-        h1 { text-align: center; color: #38bdf8; margin-bottom: 8px; font-size: 2.2rem; }
-        p.subtitle { text-align: center; color: #94a3b8; margin-bottom: 25px; }
-        
-        .search-form {
-            background-color: #1e293b;
-            padding: 20px;
-            border-radius: 12px;
-            border: 1px solid #334155;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 25px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-        }
-
-        .input-group { display: flex; flex-direction: column; gap: 6px; }
-        label { font-size: 0.85rem; color: #38bdf8; font-weight: bold; text-transform: uppercase; }
-
-        input, select {
-            padding: 12px;
-            font-size: 1rem;
-            border-radius: 6px;
-            border: 1px solid #334155;
-            background: #0f172a;
-            color: #fff;
-            outline: none;
-        }
-
-        input:focus, select:focus { border-color: #38bdf8; }
-
-        button {
-            grid-column: 1 / -1;
-            padding: 14px;
-            font-size: 1.1rem;
-            font-weight: bold;
-            background: #0284c7;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        button:hover { background: #0369a1; }
-        .status-msg { text-align: center; font-size: 1.1rem; color: #94a3b8; margin-bottom: 20px; font-weight: 500; }
-        .results-header { margin-bottom: 15px; font-size: 1.2rem; color: #38bdf8; font-weight: bold; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
-        
-        .gate-card { 
-            background: #1e293b; 
-            padding: 16px; 
-            border-radius: 8px; 
-            border: 1px solid #334155;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .gate-name { font-size: 1.4rem; font-weight: bold; color: #f1f5f9; }
-        .gate-type { font-size: 0.85rem; color: #38bdf8; font-weight: 600; }
-        .gate-detail { font-size: 0.85rem; color: #94a3b8; }
-        .coords { font-size: 0.75rem; color: #64748b; margin-top: 6px; border-top: 1px solid #334155; padding-top: 6px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VATSIM Gate Finder</title>
+  <style>
+    * { box-sizing: border-box; font-family: Inter, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 0; min-height: 100vh; background:#0b1220; color:#e5e7eb; padding:32px 16px; }
+    .container { max-width:1100px; margin:0 auto; }
+    h1 { margin:0 0 6px; text-align:center; }
+    .sub { text-align:center; color:#94a3b8; margin:0 0 24px; }
+    .form { display:grid; grid-template-columns:repeat(3, 1fr) auto; gap:12px; background:#111827; padding:16px; border:1px solid #243244; border-radius:14px; }
+    label { display:block; font-size:12px; text-transform:uppercase; color:#93c5fd; font-weight:700; margin:0 0 6px; }
+    input, select, button { width:100%; padding:12px; border-radius:9px; border:1px solid #334155; background:#0f172a; color:#fff; }
+    button { background:#0284c7; border:0; font-weight:700; cursor:pointer; }
+    .meta { margin:18px 0; color:#94a3b8; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+    .card { padding:15px; border-radius:12px; border:1px solid #334155; background:#111827; }
+    .card.available { border-color:#22c55e; background:#0d2017; }
+    .card.occupied { border-color:#ef4444; background:#241113; }
+    .card.incompatible { border-color:#f59e0b; background:#241b0c; }
+    .name { font-size:21px; font-weight:800; }
+    .badge { display:inline-block; margin-top:7px; padding:4px 8px; border-radius:99px; font-size:11px; font-weight:800; text-transform:uppercase; }
+    .ok { background:#14532d; color:#bbf7d0; }
+    .busy { background:#7f1d1d; color:#fecaca; }
+    .warn { background:#78350f; color:#fde68a; }
+    .line { margin-top:8px; color:#cbd5e1; font-size:13px; }
+    .tiny { margin-top:10px; color:#64748b; font-size:11px; border-top:1px solid #243244; padding-top:8px; }
+    .error { color:#fecaca; background:#3f1218; border:1px solid #7f1d1d; padding:12px; border-radius:10px; }
+    @media (max-width:850px) { .form { grid-template-columns:1fr; } }
+  </style>
 </head>
 <body>
+<div class="container">
+  <h1>VATSIM Gate Finder</h1>
+  <p class="sub">Automatische Gate-Daten + echte VATSIM Live-Belegung</p>
 
-    <div class="container">
-        <h1>VATSIM Gate Finder</h1>
-        <p class="subtitle">Direkte Abfrage von Flughafen-Gates, Standplätzen und Positionen</p>
-
-        <div class="search-form">
-            <div class="input-group">
-                <label for="icaoInput">ICAO Code *</label>
-                <input type="text" id="icaoInput" placeholder="z. B. EDDF, LDSP, EDDH" maxlength="4">
-            </div>
-
-            <div class="input-group">
-                <label for="airlineInput">Airline / Callsign</label>
-                <input type="text" id="airlineInput" placeholder="z. B. DLH, EWG, RYR">
-            </div>
-
-            <div class="input-group">
-                <label for="categorySelect">Flugzeugtyp / Größencode</label>
-                <select id="categorySelect">
-                    <option value="ALL">Alle Größen</option>
-                    <option value="C">Code C (A320, B738)</option>
-                    <option value="D">Code D (B757, A300)</option>
-                    <option value="E">Code E (A330, A350, B777, B787)</option>
-                    <option value="F">Code F (A380, B747-8)</option>
-                </select>
-            </div>
-
-            <button onclick="searchGates()">Gates Suchen</button>
-        </div>
-
-        <div id="status" class="status-msg"></div>
-        <div id="resultsHeader" class="results-header"></div>
-        <div id="gatesGrid" class="grid"></div>
+  <div class="form">
+    <div>
+      <label for="icao">Airport ICAO</label>
+      <input id="icao" maxlength="4" placeholder="EDDL">
     </div>
+    <div>
+      <label for="airline">Airline ICAO / Callsign</label>
+      <input id="airline" placeholder="EWG">
+    </div>
+    <div>
+      <label for="aircraft">Aircraft ICAO</label>
+      <input id="aircraft" placeholder="A320">
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button onclick="searchGates()">Gates suchen</button>
+    </div>
+  </div>
 
-    <script>
-        document.getElementById('icaoInput').addEventListener('keypress', e => { if (e.key === 'Enter') searchGates(); });
-        document.getElementById('airlineInput').addEventListener('keypress', e => { if (e.key === 'Enter') searchGates(); });
+  <div id="status" class="meta"></div>
+  <div id="results"></div>
+</div>
 
-        // Lokaler Cache im Browser für schnelle Wiederholungssuchen
-        const localCache = new Map();
+<script>
+  const el = id => document.getElementById(id);
 
-        async function searchGates() {
-            const icao = document.getElementById('icaoInput').value.trim().toUpperCase();
-            const airline = document.getElementById('airlineInput').value.trim().toUpperCase();
-            const category = document.getElementById('categorySelect').value;
+  ["icao","airline","aircraft"].forEach(id => {
+    el(id).addEventListener("keydown", e => {
+      if (e.key === "Enter") searchGates();
+    });
+  });
 
-            const status = document.getElementById('status');
-            const resultsHeader = document.getElementById('resultsHeader');
-            const gatesGrid = document.getElementById('gatesGrid');
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[c]));
+  }
 
-            if (!icao || icao.length < 3) { 
-                status.innerText = "Bitte gib einen gültigen ICAO-Code ein."; 
-                return; 
-            }
+  async function searchGates() {
+    const icao = el("icao").value.trim().toUpperCase();
+    const airline = el("airline").value.trim().toUpperCase();
+    const aircraft = el("aircraft").value.trim().toUpperCase();
 
-            status.innerText = `Durchsuche OpenStreetMap nach ${icao}...`;
-            resultsHeader.innerText = ""; 
-            gatesGrid.innerHTML = "";
+    if (!/^[A-Z0-9]{3,4}$/.test(icao)) {
+      el("results").innerHTML = '<div class="error">Bitte einen gültigen ICAO-Code eingeben.</div>';
+      return;
+    }
 
-            let allGates = [];
+    el("results").innerHTML = "";
+    el("status").innerText = "Lade Airport- und VATSIM-Daten …";
 
-            if (localCache.has(icao)) {
-                allGates = localCache.get(icao);
-            } else {
-                try {
-                    allGates = await fetchFromOverpass(icao);
-                    if (allGates.length > 0) {
-                        localCache.set(icao, allGates);
-                    }
-                } catch (err) {
-                    status.innerText = "Fehler bei der Datenabfrage. Bitte versuche es erneut.";
-                    return;
-                }
-            }
+    try {
+      const qs = new URLSearchParams({ icao });
+      if (airline) qs.set("airline", airline);
+      if (aircraft) qs.set("aircraft", aircraft);
 
-            if (allGates.length === 0) {
-                status.innerText = `Keine Gates für ${icao} gefunden. Bitte ICAO-Code prüfen.`;
-                return;
-            }
+      const response = await fetch("/api/gates?" + qs.toString(), { cache: "no-store" });
+      const data = await response.json();
 
-            // Filtern nach Airline und Flugzeugkategorie
-            let filtered = allGates;
+      if (!response.ok) {
+        el("results").innerHTML = `<div class="error">${esc(data.error || "Unbekannter Fehler")}</div>`;
+        el("status").innerText = "";
+        return;
+      }
 
-            if (airline) {
-                filtered = filtered.filter(g => 
-                    g.airline === 'Alle' || g.airline.toUpperCase().includes(airline)
-                );
-            }
+      el("status").innerText =
+        `${data.available_count} passend + frei · ${data.occupied_count} belegt · ` +
+        `${data.incompatible_count} nicht passend · VATSIM-Feed ${data.vatsimFeedTimestamp || "unbekannt"}`;
 
-            if (category && category !== 'ALL') {
-                filtered = filtered.filter(g => 
-                    g.maxcat === 'Alle' || g.maxcat.toUpperCase().includes(category)
-                );
-            }
+      const cards = data.gates.map(g => {
+        const cls = g.available ? "available" : (g.occupied ? "occupied" : "incompatible");
+        const badge = g.available
+          ? '<span class="badge ok">FREI & PASSEND</span>'
+          : g.occupied
+            ? '<span class="badge busy">BELEGT</span>'
+            : '<span class="badge warn">NICHT PASSEND</span>';
 
-            status.innerText = "";
-            resultsHeader.innerText = `${filtered.length} Positionen für ${icao} gefunden (Gesamt: ${allGates.length}):`;
+        const occupant = g.occupant
+          ? `<div class="line"><strong>Besetzt durch:</strong> ${esc(g.occupant.callsign)} · ${esc(g.occupant.aircraft || "?")} · ${g.occupant.distanceM} m</div>`
+          : "";
 
-            if (filtered.length === 0) {
-                status.innerText = "Keine Gates entsprechen deinen Filterkriterien.";
-                return;
-            }
+        const operators = g.airlines?.length ? g.airlines.join(", ") : "Keine Airline-Vorgabe";
 
-            filtered.forEach(gate => {
-                const card = document.createElement('div');
-                card.className = 'gate-card';
-                card.innerHTML = `
-                    <div class="gate-name">${gate.name}</div>
-                    <div class="gate-type">${gate.type}</div>
-                    <div class="gate-detail"><strong>Spannweite:</strong> ${gate.maxspan}</div>
-                    <div class="gate-detail"><strong>Airline:</strong> ${gate.airline}</div>
-                    <div class="coords">Lat: ${gate.lat.toFixed(4)} | Lon: ${gate.lon.toFixed(4)}</div>
-                `;
-                gatesGrid.appendChild(card);
-            });
-        }
+        return `
+          <div class="card ${cls}">
+            <div class="name">${esc(g.name)}</div>
+            ${badge}
+            <div class="line"><strong>Typ:</strong> ${esc(g.type)}</div>
+            <div class="line"><strong>Airlines:</strong> ${esc(operators)}</div>
+            <div class="line"><strong>Kategorie:</strong> ${esc(g.category || "unbekannt")} · <strong>Max. Spannweite:</strong> ${g.maxWingspanM ? esc(g.maxWingspanM + " m") : "unbekannt"}</div>
+            ${occupant}
+            <div class="tiny">${Number(g.lat).toFixed(5)}, ${Number(g.lon).toFixed(5)}</div>
+          </div>`;
+      }).join("");
 
-        async function fetchFromOverpass(icao) {
-            const queryArea = `[out:json][timeout:15];area["aeroway"="aerodrome"]["icao"="${icao}"]->.a;(node["aeroway"="parking_position"](area.a);node["aeroway"="gate"](area.a););out body;`;
-            const queryRadius = `[out:json][timeout:15];nwr["aeroway"="aerodrome"]["icao"="${icao}"]->.apt;(node["aeroway"="parking_position"](around.apt:5000);node["aeroway"="gate"](around.apt:5000););out body;`;
-
-            const endpoints = [
-                'https://overpass-api.de/api/interpreter',
-                'https://overpass.kumi.systems/api/interpreter'
-            ];
-
-            for (const endpoint of endpoints) {
-                try {
-                    // Versuch 1: Über Airport-Area
-                    let res = await fetch(endpoint, {
-                        method: 'POST',
-                        body: 'data=' + encodeURIComponent(queryArea)
-                    });
-                    let data = await res.json();
-
-                    // Versuch 2: Falls Area leer, über Radius
-                    if (!data.elements || data.elements.length === 0) {
-                        res = await fetch(endpoint, {
-                            method: 'POST',
-                            body: 'data=' + encodeURIComponent(queryRadius)
-                        });
-                        data = await res.json();
-                    }
-
-                    if (data.elements && data.elements.length > 0) {
-                        const parsed = data.elements
-                            .map(item => ({
-                                name: item.tags?.ref || item.tags?.name || 'Unbenannt',
-                                type: item.tags?.aeroway === 'gate' ? 'Gate' : 'Standplatz',
-                                maxspan: item.tags?.maxspan || item.tags?.['wingspan'] || 'k.A.',
-                                maxcat: item.tags?.['aircraft:size'] || item.tags?.['code'] || 'Alle',
-                                airline: item.tags?.airline || item.tags?.operator || 'Alle',
-                                lat: item.lat,
-                                lon: item.lon
-                            }))
-                            .filter(g => g.name !== 'Unbenannt');
-
-                        parsed.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-                        return parsed;
-                    }
-                } catch (e) {
-                    // Weiter zum nächsten Server
-                }
-            }
-
-            return [];
-        }
-    </script>
+      el("results").innerHTML = `<div class="grid">${cards}</div>`;
+    } catch (error) {
+      el("status").innerText = "";
+      el("results").innerHTML = `<div class="error">Netzwerkfehler: ${esc(error.message)}</div>`;
+    }
+  }
+</script>
 </body>
 </html>
