@@ -1,30 +1,39 @@
-# VATSIM Gate Finder v7
+# VATSIM Gate Finder v8
 
-## Exact stand occupancy
+## Why v8
 
-The important change in v7 is that VATSIM occupancy is NOT checked against the
-passenger terminal gate marker.
+The critical previous bug was that v7 ignored OSM `aeroway=parking_position`
+ways. OSM documents that parking positions can be mapped as nodes OR ways,
+and for a way the last node is the nose-wheel stop position.
 
-Instead:
+v8 parses:
+- parking_position nodes
+- parking_position ways
+- gate nodes
+- gate ways
 
-1. IFATC supplies the gate/stand name and size class.
-2. The server looks for the matching OSM `aeroway=parking_position`.
-3. That parking-position coordinate becomes the physical stand anchor.
-4. An OSM `aeroway=gate` node is used only as a fallback.
-5. VATSIM latitude/longitude is checked against that physical anchor.
-6. Groundspeed changes the radius:
-   - stopped: 45 m
-   - slow movement: 28 m
-   - taxiing: 14 m
-7. A global one-to-one assignment ensures a pilot can occupy exactly one stand.
+For parking_position ways, the final member node is used as the physical stand
+anchor.
 
-The VATSIM feed provides latitude, longitude, groundspeed, aircraft_short and
-flight plan departure/arrival.
+## Occupancy model
 
-## Gate data
+VATSIM positions are checked against the physical parking-position anchor, not
+the passenger terminal gate marker.
 
-Gate metadata comes from IFATC. OSM supplies physical coordinates.
-No gates.json is required.
+Approximate tolerance:
+- stopped: aircraft-size-aware, 45m minimum
+- slow movement: 34m
+- taxiing: 18m
+
+A one-to-one assignment prevents one aircraft from occupying multiple stands.
+
+## Sources
+
+- VATSIM public Data API v3 for live lat/lon/groundspeed/aircraft_short/flightplan
+- IFATC for gate list and size class
+- OpenStreetMap API for exact physical parking-position anchors
+
+No gates.json required.
 
 ## Render
 
@@ -34,16 +43,7 @@ npm install
 Start:
 npm start
 
-Optional environment variables:
-PARKED_RADIUS_M=45
-SLOW_RADIUS_M=28
-TAXI_RADIUS_M=14
-
-## Debug
-
-`/api/health`
-
-`/api/gates?icao=EDDK&airline=EWG&aircraft=A320`
-
-Force fresh gate coordinates:
-`/api/refresh/EDDK`
+Debug:
+GET /api/health
+GET /api/gates?icao=EDDK&airline=EWG&aircraft=A320
+GET /api/refresh/EDDK

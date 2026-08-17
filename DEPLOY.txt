@@ -1,18 +1,21 @@
-VATSIM Gate Finder v7 deployment
----------------------------------
+V8 DEPLOY
+----------
 Replace:
-server.js
-index.html
-package.json
-README.md
+- server.js
+- index.html
+- package.json
+- README.md
+
+No gates.json required.
 
 Render:
-Build: npm install
-Start: npm start
+Build Command = npm install
+Start Command = npm start
 
 After deploy:
 GET /api/health
 GET /api/gates?icao=EDDK&airline=EWG&aircraft=A320
 
-Forcing fresh gate data:
-GET /api/refresh/EDDK
+If a gate looks wrong, inspect:
+position: parking_position_way_endpoint / parking_position_node
+and the occupant distance shown on the card.

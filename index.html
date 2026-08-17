@@ -234,7 +234,7 @@ function renderCards(){
       ${badge}
       <div class="rows">
         <div class="row"><b>Gate-Airline:</b> ${airline}</div>
-        <div class="row"><b>Gate-Größe:</b> ${size}</div><div class="row"><b>Stand-Anchor:</b> ${esc(g.anchorType||"nicht gefunden")}</div>
+        <div class="row"><b>Gate-Größe:</b> ${size}</div><div class="row"><b>Position:</b> ${esc(g.anchorType||"nicht gefunden")}${g.occupant?` · ${esc(g.occupant.distanceM)} m`: " "}</div>
         <div class="row"><b>Deine Auswahl:</b> ${esc(aircraftLabel(g))}</div>
       </div>
       ${occ}
