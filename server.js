@@ -98,6 +98,53 @@ app.get('/api/find-gate', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+// Route: Holt automatisch alle Gates & Standplätze für einen ICAO-Code
+app.get('/api/gates', async (req, res) => {
+    const icao = req.query.icao ? req.query.icao.toUpperCase() : null;
+
+    if (!icao) {
+        return res.status(400).json({ error: 'Bitte gib einen ICAO-Code an, z.B. ?icao=EDDF' });
+    }
+
+    // Overpass API-Abfrage für OpenStreetMap
+    const overpassUrl = 'https://overpass-api.de/api/interpreter';
+    const query = `
+        [out:json];
+        area["icao"="${icao}"]->.searchArea;
+        (
+          node["aeroway"="parking_position"](area.searchArea);
+          node["aeroway"="gate"](area.searchArea);
+        );
+        out body;
+    `;
+
+    try {
+        const response = await fetch(overpassUrl, {
+            method: 'POST',
+            body: 'data=' + encodeURIComponent(query)
+        });
+
+        const data = await response.json();
+
+        // Daten sauber aufbereiten
+        const gates = data.elements.map(item => ({
+            name: item.tags?.ref || item.tags?.name || 'Unbenannt',
+            type: item.tags?.aeroway === 'gate' ? 'Gate' : 'Standplatz',
+            lat: item.lat,
+            lon: item.lon
+        }));
+
+        res.json({
+            icao: icao,
+            total_gates: gates.length,
+            gates: gates
+        });
+
+    } catch (error) {
+        console.error('Fehler beim Abrufen der Gates:', error);
+        res.status(500).json({ error: 'Fehler beim Laden der Gate-Daten.' });
+    }
+});
 app.listen(PORT, () => {
   console.log(`Server läuft mit Frontend auf http://localhost:${PORT}`);
 });
