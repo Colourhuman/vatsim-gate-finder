@@ -5,60 +5,174 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VATSIM Gate Finder</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
-        body { background-color: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
-        .container { width: 100%; max-width: 800px; }
-        h1 { text-align: center; color: #38bdf8; margin-bottom: 10px; }
-        p.subtitle { text-align: center; color: #94a3b8; margin-bottom: 30px; }
-        .search-box { display: flex; gap: 10px; margin-bottom: 30px; }
-        input { flex: 1; padding: 15px; font-size: 1.1rem; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #fff; text-transform: uppercase; outline: none; }
-        button { padding: 15px 30px; font-size: 1.1rem; font-weight: bold; background: #0284c7; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; min-height: 100vh; }
+        .container { width: 100%; max-width: 900px; }
+        h1 { text-align: center; color: #38bdf8; margin-bottom: 8px; font-size: 2.2rem; }
+        p.subtitle { text-align: center; color: #94a3b8; margin-bottom: 25px; }
+        
+        .search-form {
+            background-color: #1e293b;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 0.85rem;
+            color: #38bdf8;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        input, select {
+            padding: 12px;
+            font-size: 1rem;
+            border-radius: 6px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #fff;
+            outline: none;
+        }
+
+        input:focus, select:focus {
+            border-color: #38bdf8;
+        }
+
+        button {
+            grid-column: 1 / -1;
+            padding: 14px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            background: #0284c7;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
         button:hover { background: #0369a1; }
-        .status-msg { text-align: center; font-size: 1.1rem; color: #94a3b8; }
-        .results-header { margin-bottom: 15px; font-size: 1.2rem; color: #38bdf8; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; }
-        .gate-card { background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155; }
-        .gate-name { font-size: 1.3rem; font-weight: bold; color: #f1f5f9; }
-        .gate-type { font-size: 0.85rem; color: #38bdf8; margin-bottom: 8px; }
-        .coords { font-size: 0.8rem; color: #64748b; }
+        .status-msg { text-align: center; font-size: 1.1rem; color: #94a3b8; margin-bottom: 20px; }
+        .results-header { margin-bottom: 15px; font-size: 1.2rem; color: #38bdf8; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
+        
+        .gate-card { 
+            background: #1e293b; 
+            padding: 15px; 
+            border-radius: 8px; 
+            border: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .gate-name { font-size: 1.4rem; font-weight: bold; color: #f1f5f9; }
+        .gate-type { font-size: 0.85rem; color: #38bdf8; font-weight: 600; }
+        .gate-detail { font-size: 0.8rem; color: #94a3b8; }
+        .coords { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
     </style>
 </head>
 <body>
+
     <div class="container">
         <h1>VATSIM Gate Finder</h1>
-        <p class="subtitle">Gib einen ICAO-Code ein, um alle Gates & Standplätze zu finden</p>
-        <div class="search-box">
-            <input type="text" id="icaoInput" placeholder="z. B. EDDF, LDSP, EDDH" maxlength="4">
-            <button onclick="searchGates()">Suchen</button>
+        <p class="subtitle">Finde passende Gates & Standplätze nach Airport, Airline und Flugzeugtyp</p>
+
+        <div class="search-form">
+            <div class="input-group">
+                <label for="icaoInput">ICAO Code *</label>
+                <input type="text" id="icaoInput" placeholder="z. B. EDDF, LDSP, EDDH" maxlength="4">
+            </div>
+
+            <div class="input-group">
+                <label for="airlineInput">Airline / Callsign</label>
+                <input type="text" id="airlineInput" placeholder="z. B. DLH, EWG, RYR">
+            </div>
+
+            <div class="input-group">
+                <label for="categorySelect">Flugzeugtyp / Size</label>
+                <select id="categorySelect">
+                    <option value="ALL">Alle Größen</option>
+                    <option value="C">Code C (A320, B738)</option>
+                    <option value="D">Code D (B757, A300)</option>
+                    <option value="E">Code E (A330, A350, B777, B787)</option>
+                    <option value="F">Code F (A380, B747-8)</option>
+                </select>
+            </div>
+
+            <button onclick="searchGates()">Gate Suchen</button>
         </div>
+
         <div id="status" class="status-msg"></div>
         <div id="resultsHeader" class="results-header"></div>
         <div id="gatesGrid" class="grid"></div>
     </div>
+
     <script>
         document.getElementById('icaoInput').addEventListener('keypress', e => { if (e.key === 'Enter') searchGates(); });
+        document.getElementById('airlineInput').addEventListener('keypress', e => { if (e.key === 'Enter') searchGates(); });
+
         async function searchGates() {
-            const input = document.getElementById('icaoInput');
-            const icao = input.value.trim().toUpperCase();
+            const icao = document.getElementById('icaoInput').value.trim().toUpperCase();
+            const airline = document.getElementById('airlineInput').value.trim().toUpperCase();
+            const category = document.getElementById('categorySelect').value;
+
             const status = document.getElementById('status');
             const resultsHeader = document.getElementById('resultsHeader');
             const gatesGrid = document.getElementById('gatesGrid');
-            if (!icao || icao.length < 3) { status.innerText = "Bitte gib einen gültigen ICAO-Code ein."; return; }
-            status.innerText = `Lade Gate-Daten für ${icao}...`;
-            resultsHeader.innerText = ""; gatesGrid.innerHTML = "";
+
+            if (!icao || icao.length < 3) { 
+                status.innerText = "Bitte gib einen gültigen ICAO-Code ein."; 
+                return; 
+            }
+
+            status.innerText = `Lade Daten für ${icao}...`;
+            resultsHeader.innerText = ""; 
+            gatesGrid.innerHTML = "";
+
             try {
-                const response = await fetch(`/api/gates?icao=${icao}`);
+                const response = await fetch(`/api/gates?icao=${icao}&airline=${airline}&category=${category}`);
                 const data = await response.json();
-                if (!response.ok || data.error) { status.innerText = data.error || "Fehler beim Laden."; return; }
+
+                if (!response.ok || data.error) { 
+                    status.innerText = data.error || "Fehler beim Laden."; 
+                    return; 
+                }
+
                 status.innerText = "";
-                resultsHeader.innerText = `${data.total_gates} Positionen für ${data.icao} gefunden:`;
+                resultsHeader.innerText = `${data.filtered_count} Positionen für ${data.icao} gefunden (Gesamt: ${data.total_gates}):`;
+
+                if (data.gates.length === 0) {
+                    status.innerText = "Keine Gates entsprechen deinen Filterkriterien.";
+                    return;
+                }
+
                 data.gates.forEach(gate => {
                     const card = document.createElement('div');
                     card.className = 'gate-card';
-                    card.innerHTML = `<div class="gate-name">${gate.name}</div><div class="gate-type">${gate.type}</div><div class="coords">Lat: ${gate.lat.toFixed(4)}<br>Lon: ${gate.lon.toFixed(4)}</div>`;
+                    card.innerHTML = `
+                        <div class="gate-name">${gate.name}</div>
+                        <div class="gate-type">${gate.type}</div>
+                        <div class="gate-detail">Max Span: ${gate.maxspan}</div>
+                        <div class="gate-detail">Airline: ${gate.airline}</div>
+                        <div class="coords">Lat: ${gate.lat.toFixed(4)} | Lon: ${gate.lon.toFixed(4)}</div>
+                    `;
                     gatesGrid.appendChild(card);
                 });
-            } catch (err) { status.innerText = "Verbindungsfehler zum Server."; }
+            } catch (err) { 
+                status.innerText = "Verbindungsfehler zum Server."; 
+            }
         }
     </script>
 </body>
