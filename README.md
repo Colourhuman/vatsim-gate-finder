@@ -1,16 +1,30 @@
-# VATSIM Gate Finder STABLE-6
+# VATSIM Gate Finder v7
 
-## Key change
+## Exact stand occupancy
 
-This build no longer depends on Overpass.
+The important change in v7 is that VATSIM occupancy is NOT checked against the
+passenger terminal gate marker.
 
-Gate metadata:
-- IFATC gate list: gate/stand names and aircraft width class A-F
-- OpenStreetMap standard Map API: node coordinates for `aeroway=gate` and `aeroway=parking_position`
-- VATSIM Data API v3: live occupancy
+Instead:
 
-OSM is accessed with small bbox tiles around the airport instead of Overpass.
-The airport never fails solely because an Overpass instance is unavailable.
+1. IFATC supplies the gate/stand name and size class.
+2. The server looks for the matching OSM `aeroway=parking_position`.
+3. That parking-position coordinate becomes the physical stand anchor.
+4. An OSM `aeroway=gate` node is used only as a fallback.
+5. VATSIM latitude/longitude is checked against that physical anchor.
+6. Groundspeed changes the radius:
+   - stopped: 45 m
+   - slow movement: 28 m
+   - taxiing: 14 m
+7. A global one-to-one assignment ensures a pilot can occupy exactly one stand.
+
+The VATSIM feed provides latitude, longitude, groundspeed, aircraft_short and
+flight plan departure/arrival.
+
+## Gate data
+
+Gate metadata comes from IFATC. OSM supplies physical coordinates.
+No gates.json is required.
 
 ## Render
 
@@ -20,13 +34,16 @@ npm install
 Start:
 npm start
 
-No special environment variables required.
+Optional environment variables:
+PARKED_RADIUS_M=45
+SLOW_RADIUS_M=28
+TAXI_RADIUS_M=14
 
-## Notes
+## Debug
 
-IFATC does not provide a universal current airline-to-stand mapping. The finder
-therefore never invents one. Airline is retained as the selected operating
-context while aircraft compatibility is checked from the IFATC A-F gate class.
+`/api/health`
 
-VATSIM occupancy is inferred from aircraft position + flightplan departure/arrival
-+ ground speed. Each VATSIM pilot can occupy only one gate.
+`/api/gates?icao=EDDK&airline=EWG&aircraft=A320`
+
+Force fresh gate coordinates:
+`/api/refresh/EDDK`

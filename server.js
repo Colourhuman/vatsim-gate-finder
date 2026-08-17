@@ -6,25 +6,36 @@ const PORT = process.env.PORT || 10000;
 app.use(express.static(__dirname));
 app.use(express.json());
 
+// ---------- Configuration ----------
 const VATSIM_URL = "https://data.vatsim.net/v3/vatsim-data.json";
 const OURAIRPORTS_URL = "https://davidmegginson.github.io/ourairports-data/airports.csv";
-const IFATC_URL = (icao) => `https://www.ifatc.org/gates?code=${encodeURIComponent(icao)}`;
+const IFATC_URL = icao => `https://www.ifatc.org/gates?code=${encodeURIComponent(icao)}`;
 const OSM_MAP_URL = "https://api.openstreetmap.org/api/0.6/map";
 
-const VATSIM_TTL = 12_000;
-const AIRPORT_TTL = 24 * 60 * 60 * 1000;
-const GATE_TTL = 7 * 24 * 60 * 60 * 1000;
+const VATSIM_TTL_MS = 12_000;
+const AIRPORT_TTL_MS = 24 * 60 * 60 * 1000;
+const GATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const OSM_TILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-const gateCache = new Map();
-const airportCache = new Map();
+// Physical stand detection. The important part is:
+// - parked: generous radius
+// - slow/positioning: medium radius
+// - taxiing: tight radius
+const PARKED_RADIUS_M = Number(process.env.PARKED_RADIUS_M || 45);
+const SLOW_RADIUS_M = Number(process.env.SLOW_RADIUS_M || 28);
+const TAXI_RADIUS_M = Number(process.env.TAXI_RADIUS_M || 14);
+
+const OSM_TILE_TIMEOUT_MS = 4500;
+
 const ifatcCache = new Map();
+const gateCache = new Map();
+const osmTileCache = new Map();
+const airportDb = { at: 0, map: new Map() };
+let airportDbPromise = null;
+
 let vatsimCache = { at: 0, pilots: [] };
-let airportsPromise = null;
 
-const OCCUPANCY_PARKED_M = Number(process.env.OCCUPANCY_PARKED_M || 70);
-const OCCUPANCY_SLOW_M = Number(process.env.OCCUPANCY_SLOW_M || 55);
-const OCCUPANCY_TAXI_M = Number(process.env.OCCUPANCY_TAXI_M || 28);
-
+// ---------- Reference data ----------
 const AIRCRAFT = {
   A318:{cat:"C",span:34.1,name:"Airbus A318"},
   A319:{cat:"C",span:35.8,name:"Airbus A319"},
@@ -74,33 +85,36 @@ const IATA_TO_ICAO = {
   "DH4":"DH8D","AT7":"AT72","752":"B752","75Y":"B753","AB6":"A300","310":"A310",
   "332":"A332","333":"A333","339":"A339","359":"A359","351":"A35K","762":"B762",
   "763":"B763","772":"B772","77W":"B77W","788":"B788","789":"B789","781":"B78X",
-  "744":"B744","74H":"B748","380":"A388","388":"A388"
+  "744":"B744","74H":"B748","388":"A388","380":"A388"
 };
 
 const AIRLINE_ALIASES = {
-  EWG:["EWG","EW","EUROWINGS"], DLH:["DLH","LH","LUFTHANSA"], RYR:["RYR","FR","RYANAIR"],
-  WZZ:["WZZ","W6","WIZZAIR"], EZY:["EZY","U2","EASYJET"], CFG:["CFG","DE","CONDOR"],
-  TUI:["TUI","X3","TUIFLY"], AUA:["AUA","OS","AUSTRIAN"], SWR:["SWR","LX","SWISS"],
-  KLM:["KLM","KL"], AFR:["AFR","AF","AIRFRANCE"], BAW:["BAW","BA","BRITISH AIRWAYS"],
-  TAP:["TAP","TP","TAP AIR PORTUGAL"], SAS:["SAS","SK"], LOT:["LOT","LO"],
-  FIN:["FIN","AY"], UAE:["UAE","EK"], QTR:["QTR","QR"], SIA:["SIA","SQ"],
-  THY:["THY","TK"], ACA:["ACA","AC"], DAL:["DAL","DL"], UAL:["UAL","UA"], AAL:["AAL","AA"]
+  EWG:["EWG","EW","EUROWINGS"], DLH:["DLH","LH","LUFTHANSA"],
+  RYR:["RYR","FR","RYANAIR"], WZZ:["WZZ","W6","WIZZAIR"],
+  EZY:["EZY","U2","EASYJET"], CFG:["CFG","DE","CONDOR"],
+  TUI:["TUI","X3","TUIFLY"], AUA:["AUA","OS","AUSTRIAN"],
+  SWR:["SWR","LX","SWISS"], KLM:["KLM","KL"], AFR:["AFR","AF","AIRFRANCE"],
+  BAW:["BAW","BA","BRITISH AIRWAYS"], TAP:["TAP","TP","TAP AIR PORTUGAL"],
+  SAS:["SAS","SK"], LOT:["LOT","LO"], FIN:["FIN","AY"], UAE:["UAE","EK"],
+  QTR:["QTR","QR"], SIA:["SIA","SQ"], THY:["THY","TK"], ACA:["ACA","AC"],
+  DAL:["DAL","DL"], UAL:["UAL","UA"], AAL:["AAL","AA"]
 };
 
-const IFATC_CLASS_TO_CODE = { A:15, B:24, C:36, D:52, E:65, F:80 };
-
+// ---------- Helpers ----------
 function normalizeAircraft(v) {
   return String(v || "").split("/")[0].trim().toUpperCase();
 }
 
-function getAircraft(v) {
+function resolveAircraft(v) {
   const raw = normalizeAircraft(v);
   const key = IATA_TO_ICAO[raw] || raw;
+
   if (AIRCRAFT[key]) return { icao:key, ...AIRCRAFT[key] };
   if (/^A320/.test(raw)) return { icao:"A320", ...AIRCRAFT.A320 };
   if (/^A321/.test(raw)) return { icao:"A321", ...AIRCRAFT.A321 };
   if (/^A319/.test(raw)) return { icao:"A319", ...AIRCRAFT.A319 };
   if (/^B737/.test(raw)) return { icao:"B737", ...AIRCRAFT.B737 };
+
   return { icao:raw, name:raw || "Unbekannt", cat:"", span:null };
 }
 
@@ -124,434 +138,707 @@ function airlineFromCallsign(callsign) {
 }
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
-  const R=6371000, rad=x=>x*Math.PI/180;
-  const dLat=rad(lat2-lat1), dLon=rad(lon2-lon1);
-  const a=Math.sin(dLat/2)**2 + Math.cos(rad(lat1))*Math.cos(rad(lat2))*Math.sin(dLon/2)**2;
-  return 2*R*Math.asin(Math.sqrt(a));
+  const R = 6371000;
+  const rad = x => x * Math.PI / 180;
+  const dLat = rad(lat2-lat1);
+  const dLon = rad(lon2-lon1);
+
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(rad(lat1))*Math.cos(rad(lat2))*Math.sin(dLon/2)**2;
+
+  return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-function parseCsvRows(csv) {
-  const rows=[]; let row=[], cell="", quoted=false;
-  for(let i=0;i<csv.length;i++){
-    const ch=csv[i];
-    if(ch==='"' && csv[i+1]==='"' && quoted){cell+='"';i++;continue}
-    if(ch==='"'){quoted=!quoted;continue}
-    if(ch===',' && !quoted){row.push(cell);cell="";continue}
-    if((ch==='\n'||ch==='\r')&&!quoted){
-      if(ch==='\r'&&csv[i+1]==='\n')i++;
-      row.push(cell);rows.push(row);row=[];cell="";continue;
-    }
-    cell+=ch;
+function normalizeRef(v) {
+  return String(v || "")
+    .toUpperCase()
+    .replace(/\s+/g,"")
+    .replace(/[-–—_]/g,"");
+}
+
+function extractGateNumberParts(v) {
+  const s = String(v || "").toUpperCase();
+  const matches = s.match(/[A-Z]?\d{1,3}(?:\/\d{1,3})?/g) || [];
+  return matches.map(x => x.replace(/\s+/g,""));
+}
+
+function canonicalGateNames(v) {
+  const raw = String(v || "").toUpperCase().trim();
+  const variants = new Set();
+
+  variants.add(normalizeRef(raw));
+
+  for (const part of extractGateNumberParts(raw)) {
+    variants.add(normalizeRef(part));
   }
-  if(cell||row.length){row.push(cell);rows.push(row)}
+
+  // D11/D12 and D11 D12 should also be considered related to individual
+  // stand anchors when the source only has the grouped name.
+  if (raw.includes("/")) {
+    for (const piece of raw.split("/")) variants.add(normalizeRef(piece));
+  }
+
+  return [...variants].filter(Boolean);
+}
+
+// ---------- Airport DB ----------
+function parseCsvRows(csv) {
+  const rows = [];
+  let row = [], cell = "", quoted = false;
+
+  for (let i=0; i<csv.length; i++) {
+    const ch = csv[i];
+
+    if (ch === '"' && csv[i+1] === '"' && quoted) {
+      cell += '"';
+      i++;
+      continue;
+    }
+
+    if (ch === '"') {
+      quoted = !quoted;
+      continue;
+    }
+
+    if (ch === ',' && !quoted) {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+
+    if ((ch === "\n" || ch === "\r") && !quoted) {
+      if (ch === "\r" && csv[i+1] === "\n") i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+
+    cell += ch;
+  }
+
+  if (cell || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+
   return rows;
 }
 
-async function loadAirports(){
-  if(airportCache.size && airportCache.get("__db")?.at && Date.now()-airportCache.get("__db").at<AIRPORT_TTL){
-    return airportCache.get("__db").data;
-  }
-  if(airportsPromise) return airportsPromise;
+async function loadAirports() {
+  const cached = airportDb.map.get("__db");
+  if (cached && Date.now()-cached.at < AIRPORT_TTL_MS) return cached.data;
+  if (airportDbPromise) return airportDbPromise;
 
-  airportsPromise=(async()=>{
-    const r=await fetch(OURAIRPORTS_URL,{headers:{"User-Agent":"VATSIM-Gate-Finder-Stable/6.0"}});
-    if(!r.ok)throw new Error(`OurAirports HTTP ${r.status}`);
-    const rows=parseCsvRows(await r.text());
-    const header=rows.shift();
-    const idx=Object.fromEntries(header.map((x,i)=>[x,i]));
-    const map=new Map();
-    for(const row of rows){
-      const ident=String(row[idx.ident]||"").trim().toUpperCase();
-      const lat=Number(row[idx.latitude_deg]), lon=Number(row[idx.longitude_deg]);
-      if(/^[A-Z0-9]{4}$/.test(ident)&&Number.isFinite(lat)&&Number.isFinite(lon)){
-        map.set(ident,{lat,lon,name:row[idx.name]||ident});
+  airportDbPromise = (async() => {
+    const r = await fetch(OURAIRPORTS_URL, {
+      headers: {"User-Agent":"VATSIM-Gate-Finder-v7"}
+    });
+    if (!r.ok) throw new Error(`OurAirports HTTP ${r.status}`);
+
+    const rows = parseCsvRows(await r.text());
+    const header = rows.shift();
+    const idx = Object.fromEntries(header.map((x,i)=>[x,i]));
+    const map = new Map();
+
+    for (const row of rows) {
+      const ident = String(row[idx.ident] || "").trim().toUpperCase();
+      const lat = Number(row[idx.latitude_deg]);
+      const lon = Number(row[idx.longitude_deg]);
+
+      if (/^[A-Z0-9]{4}$/.test(ident) &&
+          Number.isFinite(lat) &&
+          Number.isFinite(lon)) {
+        map.set(ident, {
+          lat,
+          lon,
+          name: row[idx.name] || ident
+        });
       }
     }
-    airportCache.set("__db",{at:Date.now(),data:map});
-    airportsPromise=null;
-    return map;
-  })().catch(e=>{airportsPromise=null;throw e});
 
-  return airportsPromise;
+    airportDb.map.set("__db",{at:Date.now(),data:map});
+    airportDbPromise = null;
+    return map;
+  })().catch(e=>{
+    airportDbPromise = null;
+    throw e;
+  });
+
+  return airportDbPromise;
+}
+
+// ---------- IFATC ----------
+function cleanHtml(s) {
+  return String(s || "")
+    .replace(/<[^>]*>/g," ")
+    .replace(/&nbsp;/g," ")
+    .replace(/&amp;/g,"&")
+    .replace(/&#x27;/g,"'")
+    .replace(/\s+/g," ")
+    .trim();
 }
 
 function parseIfatc(html) {
-  // The page is rendered as a simple HTML table. The web source exposes rows:
-  // Name | Type | Class. We only consume data, never copy page styling.
-  const rows=[];
-  const clean=s=>s.replace(/<[^>]+>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/\s+/g," ").trim();
-  const trMatches=html.match(/<tr[\s\S]*?<\/tr>/gi)||[];
+  const gates = [];
+  const trs = html.match(/<tr[\s\S]*?<\/tr>/gi) || [];
 
-  for(const tr of trMatches){
-    const cells=(tr.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi)||[]).map(clean);
-    if(cells.length<3)continue;
-    const name=cells[0], type=cells[1], cls=cells[2].toUpperCase();
-    if(!name||!["A","B","C","D","E","F"].includes(cls))continue;
-    if(name.toLowerCase().includes("name") && type.toLowerCase().includes("type"))continue;
-    rows.push({rawName:name,type,class:cls,maxSpanM:IFATC_CLASS_TO_CODE[cls]});
+  for (const tr of trs) {
+    const cells =
+      (tr.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || [])
+        .map(cleanHtml);
+
+    if (cells.length < 3) continue;
+
+    const name = cells[0];
+    const type = cells[1];
+    const cls = cells[2].toUpperCase().trim();
+
+    if (!name || !/^[ABCDEF]$/.test(cls)) continue;
+    if (name.toLowerCase() === "name") continue;
+
+    gates.push({
+      rawName:name,
+      type,
+      category:cls
+    });
   }
 
-  return rows;
+  return gates;
 }
 
-function canonicalGateRef(name){
-  let s=String(name||"").toUpperCase();
-  s=s.replace(/\b(APRON|TERMINAL|REMOTE|STAND|GATE|CARGO|AIRLINE|GA|MILITARY|NONE|INT\.?|DOM\.?)\b/g," ");
-  const matches=s.match(/[A-Z]?\d{1,3}[A-Z]?/g)||[];
-  if(!matches.length)return s.replace(/\s+/g,"").slice(-12);
-  // Prefer the final stand-like token, e.g. "Terminal 1 Gate C10" -> C10.
-  return matches[matches.length-1].replace(/\s+/g,"");
-}
+async function loadIfatc(icao) {
+  const cached = ifatcCache.get(icao);
+  if (cached && Date.now()-cached.at < GATE_TTL_MS) return cached.data;
 
-function normalizeGateRef(v){
-  return String(v||"").toUpperCase().replace(/[\s_-]/g,"");
-}
-
-async function loadIfatc(icao){
-  const cached=ifatcCache.get(icao);
-  if(cached&&Date.now()-cached.at<GATE_TTL)return cached.data;
-
-  const r=await fetch(IFATC_URL(icao),{
-    headers:{"User-Agent":"VATSIM-Gate-Finder-Stable/6.0","Accept":"text/html"}
+  const r = await fetch(IFATC_URL(icao), {
+    headers: {
+      "User-Agent":"VATSIM-Gate-Finder-v7",
+      "Accept":"text/html"
+    }
   });
-  if(!r.ok)throw new Error(`IFATC HTTP ${r.status}`);
 
-  const data={updatedAt:new Date().toISOString(),gates:parseIfatc(await r.text())};
-  ifatcCache.set(icao,{at:Date.now(),data});
+  if (!r.ok) throw new Error(`IFATC HTTP ${r.status}`);
+
+  const data = {
+    at: Date.now(),
+    gates: parseIfatc(await r.text())
+  };
+
+  ifatcCache.set(icao,data);
   return data;
 }
 
-// OSM's standard /api/0.6/map endpoint does not require Overpass.
-// We query small tiles around the airport and only retain gate/parking nodes.
-async function fetchOsmTile(bbox){
+// ---------- OpenStreetMap exact stand anchors ----------
+function makeOsmBboxes(center) {
+  // Nine compact tiles cover roughly 4x4 km around the airport reference.
+  // Parking positions are local apron features, so we don't need a 5km query.
+  const step = 0.012;
+  const half = step * 1.5;
+  const tiles = [];
+
+  for (let y=-half; y<half; y+=step) {
+    for (let x=-half; x<half; x+=step) {
+      tiles.push([
+        center.lon+x,
+        center.lat+y,
+        center.lon+x+step,
+        center.lat+y+step
+      ]);
+    }
+  }
+
+  return tiles;
+}
+
+function parseOsmXml(xml) {
+  // Small XML scanner with state. This is intentionally not a regexp over
+  // arbitrary chunks; each node's tags are parsed as proper child elements.
+  const positions = [];
+  const nodeRegex = /<node\b([^>]*)>([\s\S]*?)<\/node>|<node\b([^>]*)\/>/g;
+  let match;
+
+  while ((match=nodeRegex.exec(xml))) {
+    const attrText = match[1] || match[3] || "";
+    const inner = match[2] || "";
+
+    const attrs = {};
+    const attrRegex = /(\w+)="([^"]*)"/g;
+    let a;
+    while ((a=attrRegex.exec(attrText))) attrs[a[1]]=a[2];
+
+    const lat = Number(attrs.lat);
+    const lon = Number(attrs.lon);
+    if (!attrs.id || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+    const tags = {};
+    const tagRegex = /<tag\b([^>]*)\/?>/g;
+    let t;
+    while ((t=tagRegex.exec(inner))) {
+      const ta = {};
+      let aa;
+      const ar = /(\w+)="([^"]*)"/g;
+      while ((aa=ar.exec(t[1]))) ta[aa[1]]=aa[2];
+      if (ta.k) tags[ta.k]=ta.v || "";
+    }
+
+    const aeroway = String(tags.aeroway || "");
+    if (aeroway !== "parking_position" && aeroway !== "gate") continue;
+
+    const ref = tags.ref || tags["stand:ref"] || tags["parking:ref"] || tags.name;
+    if (!ref) continue;
+
+    const span = Number.parseFloat(String(
+      tags.maxspan || tags.max_wingspan || tags.wingspan || ""
+    ).replace(",","." ));
+
+    const category = String(
+      tags["aircraft:reference_code"] || tags["aircraft:size"] || ""
+    ).toUpperCase();
+
+    positions.push({
+      osmId:attrs.id,
+      ref:String(ref).trim(),
+      lat,
+      lon,
+      kind:aeroway,
+      category:/^[ABCDEF]$/.test(category) ? category : null,
+      maxWingspanM:Number.isFinite(span) ? span : null
+    });
+  }
+
+  return positions;
+}
+
+async function fetchOsmTile(bbox) {
+  const key=bbox.map(x=>x.toFixed(5)).join(",");
+
+  const cached=osmTileCache.get(key);
+  if (cached && Date.now()-cached.at < OSM_TILE_TTL_MS) return cached.data;
+
   const [minLon,minLat,maxLon,maxLat]=bbox;
   const url=`${OSM_MAP_URL}?bbox=${minLon},${minLat},${maxLon},${maxLat}`;
-  const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),5000);
 
-  try{
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),OSM_TILE_TIMEOUT_MS);
+
+  try {
     const r=await fetch(url,{
       headers:{
-        "User-Agent":"VATSIM-Gate-Finder-Stable/6.0 (https://vatsim-gate-finder.onrender.com)",
+        "User-Agent":"VATSIM-Gate-Finder-v7 (https://vatsim-gate-finder.onrender.com)",
         "Accept":"application/xml"
       },
       signal:controller.signal
     });
-    if(!r.ok)throw new Error(`OSM map HTTP ${r.status}`);
-    const xml=await r.text();
 
-    const nodes=new Map();
-    const nodeRegex=/<node\b([^>]*?)\/?>/g;
-    let match;
-    while((match=nodeRegex.exec(xml))){
-      const attrs={};
-      const attrRegex=/(\w+)="([^"]*)"/g;
-      let a;
-      while((a=attrRegex.exec(match[1])))attrs[a[1]]=a[2];
-      if(!attrs.id||!attrs.lat||!attrs.lon)continue;
+    if (!r.ok) throw new Error(`OSM HTTP ${r.status}`);
 
-      const elementEnd=xml.slice(nodeRegex.lastIndex, nodeRegex.lastIndex+2500);
-      const nodeBlock=xml.slice(Math.max(0,nodeRegex.lastIndex-100),Math.min(xml.length,nodeRegex.lastIndex+2500));
-      const isParking=/k="aeroway"\s+v="parking_position"/.test(nodeBlock);
-      const isGate=/k="aeroway"\s+v="gate"/.test(nodeBlock);
-      if(!isParking&&!isGate)continue;
+    const data=parseOsmXml(await r.text());
 
-      const ref=nodeBlock.match(/<tag\b[^>]*k="(?:ref|stand:ref|parking:ref)"[^>]*v="([^"]+)"/i)?.[1]||null;
-      const name=nodeBlock.match(/<tag\b[^>]*k="name"[^>]*v="([^"]+)"/i)?.[1]||null;
-      const span=nodeBlock.match(/<tag\b[^>]*k="(?:maxspan|max_wingspan|wingspan)"[^>]*v="([^"]+)"/i)?.[1]||null;
-      const cat=nodeBlock.match(/<tag\b[^>]*k="(?:aircraft:reference_code|aircraft:size)"[^>]*v="([^"]+)"/i)?.[1]||null;
-      const label=ref||name;
-      if(!label)continue;
-
-      nodes.set(attrs.id,{
-        osmId:attrs.id,
-        ref:label,
-        lat:Number(attrs.lat),
-        lon:Number(attrs.lon),
-        type:isGate?"Gate":"Standplatz",
-        maxSpanM:Number.parseFloat(String(span||"").replace(",","."))||null,
-        category:["A","B","C","D","E","F"].includes(String(cat||"").toUpperCase())?String(cat).toUpperCase():null
-      });
-    }
-    return [...nodes.values()];
-  }finally{
+    osmTileCache.set(key,{at:Date.now(),data});
+    return data;
+  } finally {
     clearTimeout(timeout);
   }
 }
 
-function makeTiles(center){
-  // 3 x 3 km-ish coverage around the ARP using nine small OSM API requests.
-  // Render only needs a handful of tiles; results are cached for 7 days.
-  const step=0.012;
-  const half=0.018;
-  const tiles=[];
-  for(let dy=-half;dy<half;dy+=step){
-    for(let dx=-half;dx<half;dx+=step){
-      const minLon=center.lon+dx, minLat=center.lat+dy;
-      tiles.push([minLon,minLat,minLon+step,minLat+step]);
-    }
-  }
-  return tiles;
-}
+async function loadOsmPositions(icao) {
+  const airports = await loadAirports();
+  const center = airports.get(icao);
 
-async function loadOsmPositions(icao){
-  const airports=await loadAirports();
-  const center=airports.get(icao);
-  if(!center)throw new Error(`Airport ${icao} nicht in OurAirports gefunden.`);
+  if (!center) throw new Error(`Airport ${icao} nicht in OurAirports gefunden.`);
 
-  const tiles=makeTiles(center);
+  const tiles=makeOsmBboxes(center);
   const results=await Promise.allSettled(tiles.map(fetchOsmTile));
-  const positions=results.flatMap(r=>r.status==="fulfilled"?r.value:[]);
-  const unique=new Map();
 
-  for(const p of positions){
-    const key=normalizeGateRef(p.ref);
-    if(!key)continue;
-    const existing=unique.get(key);
-    if(!existing||(!existing.category&&p.category)||(!existing.maxSpanM&&p.maxSpanM)){
-      unique.set(key,p);
+  const positions=[];
+  for (const r of results) {
+    if (r.status==="fulfilled") positions.push(...r.value);
+  }
+
+  // Deduplicate OSM objects by ref + proximity, but DO NOT merge two distinct
+  // positions merely because they share a numeric-looking name.
+  const unique=[];
+
+  for (const p of positions) {
+    const same=unique.find(x =>
+      canonicalGateNames(x.ref).some(ax=>canonicalGateNames(p.ref).includes(ax)) &&
+      haversineMeters(x.lat,x.lon,p.lat,p.lon) < 25
+    );
+
+    if (!same) unique.push(p);
+    else if (same.kind !== "parking_position" && p.kind === "parking_position") {
+      Object.assign(same,p);
     }
   }
-  return [...unique.values()];
+
+  return unique;
 }
 
-function mergeIfatcAndOsm(ifatc,osm){
-  const result=[];
-  const byRef=new Map();
+// ---------- Gate/stand model ----------
+function choosePhysicalAnchor(ifatcGate, osmPositions) {
+  const ifatcNames=canonicalGateNames(ifatcGate.rawName);
 
-  for(const p of osm){
-    const key=normalizeGateRef(p.ref);
-    if(key)byRef.set(key,p);
-  }
+  // PRIMARY: exact parking position reference.
+  const parking = osmPositions
+    .filter(p=>p.kind==="parking_position")
+    .filter(p=>canonicalGateNames(p.ref).some(x=>ifatcNames.includes(x)));
 
-  for(const g of ifatc.gates){
-    const key=normalizeGateRef(canonicalGateRef(g.rawName));
-    const p=byRef.get(key)||null;
-
-    // Only show items that are actually gate/stand-like. IFATC includes hangars,
-    // military pads, etc.; keep Airline + GA + Cargo entries, plus unnamed
-    // parking positions discovered by OSM only as fallback.
-    const usefulType=/airline|cargo|ga/i.test(g.type)||/stand|gate|apron/i.test(g.rawName);
-    if(!usefulType)continue;
-
-    result.push({
-      name:canonicalGateRef(g.rawName),
-      displayName:g.rawName,
-      type:g.type,
-      category:g.class,
-      maxWingspanM:g.maxSpanM,
-      lat:p?.lat??null,
-      lon:p?.lon??null,
-      osmId:p?.osmId??null,
-      source:p?"IFATC + OSM":"IFATC"
+  if (parking.length) {
+    // If there are several, choose the one whose name has the strongest exact match.
+    parking.sort((a,b)=>{
+      const sa=normalizeRef(a.ref)===normalizeRef(ifatcGate.rawName)?0:1;
+      const sb=normalizeRef(b.ref)===normalizeRef(ifatcGate.rawName)?0:1;
+      return sa-sb;
     });
+
+    return {...parking[0], anchorType:"parking_position"};
   }
 
-  // Add OSM stands that IFATC did not know about.
-  const seen=new Set(result.map(x=>normalizeGateRef(x.name)));
-  for(const p of osm){
-    const key=normalizeGateRef(p.ref);
-    if(!key||seen.has(key))continue;
+  // SECONDARY: OSM gate node with matching ref.
+  const gates = osmPositions
+    .filter(p=>p.kind==="gate")
+    .filter(p=>canonicalGateNames(p.ref).some(x=>ifatcNames.includes(x)));
+
+  if (gates.length) {
+    return {...gates[0], anchorType:"gate_node"};
+  }
+
+  return null;
+}
+
+function mergeGateData(ifatcGates, osmPositions) {
+  const result=[];
+  const usedOsmIds=new Set();
+
+  for (const iGate of ifatcGates) {
+    const anchor=choosePhysicalAnchor(iGate,osmPositions);
+
+    const gate={
+      name:iGate.rawName,
+      displayName:iGate.rawName,
+      type:iGate.type,
+      category:iGate.category,
+      maxWingspanM:null,
+      lat:anchor?.lat ?? null,
+      lon:anchor?.lon ?? null,
+      osmId:anchor?.osmId ?? null,
+      anchorType:anchor?.anchorType ?? "none",
+      source:anchor ? "IFATC + OSM" : "IFATC"
+    };
+
+    if (anchor) {
+      usedOsmIds.add(anchor.osmId);
+      if (anchor.maxWingspanM) gate.maxWingspanM=anchor.maxWingspanM;
+      if (anchor.category) gate.category=anchor.category;
+    }
+
+    result.push(gate);
+  }
+
+  // Include OSM parking positions which IFATC did not list.
+  for (const p of osmPositions) {
+    if (p.kind!=="parking_position") continue;
+    if (usedOsmIds.has(p.osmId)) continue;
+
+    const known=result.find(g =>
+      canonicalGateNames(g.name).some(a=>canonicalGateNames(p.ref).includes(a)) &&
+      Number.isFinite(g.lat) &&
+      haversineMeters(g.lat,g.lon,p.lat,p.lon)<25
+    );
+
+    if (known) continue;
+
     result.push({
       name:p.ref,
       displayName:p.ref,
-      type:p.type,
+      type:"Standplatz",
       category:p.category,
-      maxWingspanM:p.maxSpanM,
-      lat:p.lat,lon:p.lon,osmId:p.osmId,
+      maxWingspanM:p.maxWingspanM,
+      lat:p.lat,
+      lon:p.lon,
+      osmId:p.osmId,
+      anchorType:"parking_position",
       source:"OSM"
     });
-    seen.add(key);
   }
 
-  result.sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{numeric:true,sensitivity:"base"}));
   return result;
 }
 
-function occupancyRadius(gs){
-  if(gs<=3)return OCCUPANCY_PARKED_M;
-  if(gs<=12)return OCCUPANCY_SLOW_M;
-  return OCCUPANCY_TAXI_M;
+// ---------- VATSIM occupancy ----------
+function radiusForGroundspeed(gs) {
+  if (gs <= 2) return PARKED_RADIUS_M;
+  if (gs <= 8) return SLOW_RADIUS_M;
+  return TAXI_RADIUS_M;
 }
 
-function assignOccupancy(gates,icao,pilots){
+function assignOccupancy(gates,icao,pilots) {
   const candidates=[];
-  for(const p of pilots){
-    const fp=p.flight_plan||{};
+
+  for (const pilot of pilots) {
+    const fp=pilot.flight_plan||{};
     const dep=String(fp.departure||"").toUpperCase();
     const arr=String(fp.arrival||"").toUpperCase();
-    if(dep!==icao&&arr!==icao)continue;
 
-    const lat=Number(p.latitude),lon=Number(p.longitude);
-    if(!Number.isFinite(lat)||!Number.isFinite(lon))continue;
+    if (dep!==icao && arr!==icao) continue;
 
-    const gs=Number(p.groundspeed||0);
-    const radius=occupancyRadius(gs);
-    let best=null;
+    const lat=Number(pilot.latitude);
+    const lon=Number(pilot.longitude);
+    if (!Number.isFinite(lat)||!Number.isFinite(lon)) continue;
 
-    for(let i=0;i<gates.length;i++){
+    const gs=Number(pilot.groundspeed||0);
+    const radius=radiusForGroundspeed(gs);
+
+    // Exact physical stand anchors only.
+    const options=[];
+
+    for (let i=0;i<gates.length;i++) {
       const g=gates[i];
-      if(!Number.isFinite(g.lat)||!Number.isFinite(g.lon))continue;
-      const d=haversineMeters(g.lat,g.lon,lat,lon);
-      if(d<=radius&&(!best||d<best.distance))best={i,d};
+      if (!Number.isFinite(g.lat)||!Number.isFinite(g.lon)) continue;
+
+      // Do not use terminal gate markers for occupancy when a physical stand
+      // anchor exists. gate_node is only fallback.
+      if (g.anchorType==="none") continue;
+
+      const distance=haversineMeters(g.lat,g.lon,lat,lon);
+      if (distance <= radius) {
+        options.push({index:i,distance});
+      }
     }
-    if(!best)continue;
 
-    candidates.push({pilot:p,i:best.i,d:best.d,gs});
-  }
+    if (!options.length) continue;
 
-  candidates.sort((a,b)=>a.d-b.d);
-  const usedGates=new Set(),usedPilots=new Set(),out=[];
+    options.sort((a,b)=>a.distance-b.distance);
+    const best=options[0];
 
-  for(const c of candidates){
-    const id=String(c.pilot.cid||c.pilot.callsign||"");
-    if(usedGates.has(c.i)||usedPilots.has(id))continue;
-    usedGates.add(c.i);usedPilots.add(id);
+    // Add an anti-taxi filter. A 100kt aircraft passing the apron should never
+    // be a stand occupant.
+    if (gs>8 && best.distance>TAXI_RADIUS_M) continue;
 
-    const callsign=String(c.pilot.callsign||"").toUpperCase();
-    const airline=airlineFromCallsign(callsign);
-    const aircraft=normalizeAircraft(c.pilot.flight_plan?.aircraft_short||c.pilot.flight_plan?.aircraft||"");
-
-    out.push({
-      gateIndex:c.i,
-      callsign:c.pilot.callsign,
-      airline,
-      aircraft,
-      cid:c.pilot.cid,
-      distanceM:Math.round(c.d),
-      groundspeed:c.gs
+    candidates.push({
+      pilot,
+      gateIndex:best.index,
+      distance:best.distance,
+      groundspeed:gs
     });
   }
-  return out;
+
+  // One aircraft -> one stand AND one stand -> one aircraft.
+  candidates.sort((a,b)=>a.distance-b.distance);
+
+  const usedPilots=new Set();
+  const usedGates=new Set();
+  const assignments=[];
+
+  for (const c of candidates) {
+    const pilotId=String(c.pilot.cid||c.pilot.callsign||"");
+    if (usedPilots.has(pilotId)||usedGates.has(c.gateIndex)) continue;
+
+    usedPilots.add(pilotId);
+    usedGates.add(c.gateIndex);
+
+    assignments.push({
+      gateIndex:c.gateIndex,
+      callsign:c.pilot.callsign,
+      airline:airlineFromCallsign(c.pilot.callsign),
+      aircraft:normalizeAircraft(c.pilot.flight_plan?.aircraft_short||c.pilot.flight_plan?.aircraft||""),
+      cid:c.pilot.cid,
+      distanceM:Math.round(c.distance),
+      groundspeed:c.groundspeed
+    });
+  }
+
+  return assignments;
 }
 
-async function getVatsim(){
-  if(Date.now()-vatsimCache.at<VATSIM_TTL)return vatsimCache.pilots;
-  const r=await fetch(VATSIM_URL,{headers:{"User-Agent":"VATSIM-Gate-Finder-Stable/6.0"}});
-  if(!r.ok)throw new Error(`VATSIM HTTP ${r.status}`);
-  const d=await r.json();
-  vatsimCache={at:Date.now(),pilots:Array.isArray(d.pilots)?d.pilots:[]};
+// ---------- API ----------
+async function getVatsimPilots() {
+  if (Date.now()-vatsimCache.at<VATSIM_TTL_MS) return vatsimCache.pilots;
+
+  const r=await fetch(VATSIM_URL,{
+    headers:{"User-Agent":"VATSIM-Gate-Finder-v7"}
+  });
+
+  if (!r.ok) throw new Error(`VATSIM HTTP ${r.status}`);
+
+  const data=await r.json();
+
+  vatsimCache={
+    at:Date.now(),
+    pilots:Array.isArray(data.pilots)?data.pilots:[]
+  };
+
   return vatsimCache.pilots;
 }
 
-function gateMatchesAircraft(g,ac){
-  if(!ac)return true;
-  if(!g.category)return true;
-  return "ABCDEF".indexOf(ac.cat||"F")<="ABCDEF".indexOf(g.category);
-}
+function aircraftFitsGate(gate,aircraft) {
+  if (!aircraft) return true;
 
-function gateMatchesAirline(g,requested){
-  // IFATC provides gate class/type but not a universal per-airline restriction.
-  // Therefore do not invent a restriction. Airline is used as the user context
-  // and live occupancy metadata; it is not a false hard filter.
-  return !!requested;
+  if (gate.category && aircraft.cat) {
+    return "ABCDEF".indexOf(aircraft.cat) <= "ABCDEF".indexOf(gate.category);
+  }
+
+  if (gate.maxWingspanM && aircraft.span) {
+    return aircraft.span <= gate.maxWingspanM + 0.5;
+  }
+
+  return true;
 }
 
 app.get("/api/health",(req,res)=>{
   res.json({
     ok:true,
-    version:"STABLE-6",
+    version:"7.0",
     serverTime:new Date().toISOString(),
     vatsimFeedAgeSeconds:vatsimCache.at?Math.round((Date.now()-vatsimCache.at)/1000):null,
-    cachedAirports:gateCache.size,
-    sources:{
-      gates:"IFATC + OpenStreetMap API",
-      occupancy:"VATSIM Data API v3",
-      aircraft:"built-in ICAO/IATA reference"
+    gateCacheSize:gateCache.size,
+    osmTileCacheSize:osmTileCache.size,
+    occupancy:{
+      parked:PARKED_RADIUS_M,
+      slow:SLOW_RADIUS_M,
+      taxi:TAXI_RADIUS_M
     }
   });
 });
 
 app.get("/api/gates",async(req,res)=>{
   const icao=String(req.query.icao||"").trim().toUpperCase();
-  const airline=String(req.query.airline||"").trim();
+  const airlineInput=String(req.query.airline||"").trim();
   const aircraftInput=String(req.query.aircraft||"").trim();
 
-  if(!/^[A-Z0-9]{4}$/.test(icao)){
-    return res.status(400).json({error:"Bitte einen gültigen 4-stelligen ICAO-Code eingeben."});
+  if (!/^[A-Z0-9]{4}$/.test(icao)) {
+    return res.status(400).json({
+      error:"Bitte einen gültigen 4-stelligen ICAO-Code eingeben."
+    });
   }
 
-  try{
-    const [airportResult,ifatcResult,vatsimResult]=await Promise.all([
-      loadOsmPositions(icao).catch(e=>({error:e.message,positions:[]})),
-      loadIfatc(icao).catch(e=>({error:e.message,gates:[]})),
-      getVatsim().catch(e=>{console.warn("[VATSIM]",e.message);return[]})
-    ]);
+  try {
+    const cached=gateCache.get(icao);
 
-    const osmPositions=Array.isArray(airportResult)?airportResult:airportResult.positions;
-    const ifatc=ifatcResult;
+    let airportData;
 
-    let gates=mergeIfatcAndOsm(ifatc,osmPositions);
+    if (cached && Date.now()-cached.at<GATE_TTL_MS) {
+      airportData=cached.data;
+    } else {
+      const [ifatcResult,osmResult]=await Promise.allSettled([
+        loadIfatc(icao),
+        loadOsmPositions(icao)
+      ]);
 
-    // Last-resort: if IFATC is unavailable, OSM positions still produce a
-    // functional airport list.
-    if(!gates.length&&osmPositions.length){
-      gates=osmPositions.map(p=>({
-        name:p.ref,displayName:p.ref,type:p.type,category:p.category,
-        maxWingspanM:p.maxSpanM,lat:p.lat,lon:p.lon,osmId:p.osmId,source:"OSM"
-      }));
+      const ifatc=ifatcResult.status==="fulfilled"
+        ? ifatcResult.value.gates
+        : [];
+
+      const osm=osmResult.status==="fulfilled"
+        ? osmResult.value
+        : [];
+
+      if (!ifatc.length && !osm.length) {
+        const ifatcError=ifatcResult.reason?.message || null;
+        const osmError=osmResult.reason?.message || null;
+
+        return res.status(502).json({
+          error:`Gate-Daten für ${icao} konnten gerade nicht geladen werden.`,
+          details:{ifatc:ifatcError,osm:osmError}
+        });
+      }
+
+      const merged=mergeGateData(ifatc,osm);
+
+      airportData={
+        source:ifatc.length&&osm.length
+          ?"IFATC + OpenStreetMap"
+          :ifatc.length
+            ?"IFATC"
+            :"OpenStreetMap",
+        gates:merged,
+        at:new Date().toISOString()
+      };
+
+      gateCache.set(icao,{at:Date.now(),data:airportData});
     }
 
-    if(!gates.length){
-      return res.status(404).json({
-        error:`Keine Gate-Daten für ${icao} gefunden.`,
-        details:{
-          ifatc:ifatc.error||null,
-          osm:airportResult.error||null
-        }
-      });
-    }
+    // VATSIM is intentionally NOT cached with gates. It is live each refresh.
+    const pilots=await getVatsimPilots().catch(e=>{
+      console.warn("[VATSIM]",e.message);
+      return [];
+    });
 
-    const ac=getAircraft(aircraftInput);
-    const occupancy=assignOccupancy(gates,icao,vatsimResult);
-    const byGate=new Map(occupancy.map(x=>[x.gateIndex,x]));
+    const requestedAircraft=resolveAircraft(aircraftInput);
+    const occupancy=assignOccupancy(airportData.gates,icao,pilots);
+    const occupiedByGate=new Map(occupancy.map(o=>[o.gateIndex,o]));
 
-    const output=gates.map((g,i)=>{
-      const occ=byGate.get(i)||null;
-      const aircraftOK=gateMatchesAircraft(g,ac);
+    const output=airportData.gates.map((gate,index)=>{
+      const occupant=occupiedByGate.get(index)||null;
+      const compatible=aircraftFitsGate(gate,requestedAircraft);
 
       return {
-        ...g,
-        compatible:aircraftOK,
-        occupied:Boolean(occ),
-        available:aircraftOK&&!occ,
-        status:occ?"occupied":(aircraftOK?"available":"incompatible"),
-        occupant:occ||null
+        ...gate,
+        compatible,
+        occupied:Boolean(occupant),
+        available:compatible&&!occupant,
+        status:occupant
+          ?"occupied"
+          :compatible
+            ?"available"
+            :"incompatible",
+        occupant
       };
     });
 
     output.sort((a,b)=>{
-      const rank=x=>x.status==="available"?0:(x.status==="incompatible"?1:2);
-      return rank(a)-rank(b)||a.name.localeCompare(b.name,undefined,{numeric:true});
+      const rank=g=>g.status==="available"?0:g.status==="incompatible"?1:2;
+      return rank(a)-rank(b) ||
+        String(a.name).localeCompare(String(b.name),undefined,{numeric:true});
     });
 
     res.setHeader("Cache-Control","no-store");
+
     res.json({
-      version:"STABLE-6",
+      version:"7.0",
       icao,
-      requestedAirline:airline||null,
+      source:airportData.source,
+      requestedAirline:airlineInput||null,
       requestedAircraft:aircraftInput||null,
-      aircraftInfo:ac,
-      sources:{
-        ifatc:ifatc.error?"unavailable":"ok",
-        osm:airportResult.error?"unavailable":"ok"
-      },
+      aircraftInfo:requestedAircraft,
+      gateCacheCreatedAt:airportData.at,
       totals:{
         gates:output.length,
         available:output.filter(g=>g.available).length,
         occupied:output.filter(g=>g.occupied).length,
         incompatible:output.filter(g=>!g.compatible).length
       },
-      vatsimUpdatedAt:vatsimCache.at?new Date(vatsimCache.at).toISOString():null,
+      occupancy:{
+        parkedRadiusM:PARKED_RADIUS_M,
+        slowRadiusM:SLOW_RADIUS_M,
+        taxiRadiusM:TAXI_RADIUS_M
+      },
+      vatsimUpdatedAt:vatsimCache.at
+        ? new Date(vatsimCache.at).toISOString()
+        : null,
       gates:output
     });
-  }catch(e){
-    console.error(e);
+  } catch (error) {
+    console.error(error);
     res.status(502).json({
       error:"Gate-Daten konnten gerade nicht abgerufen werden.",
-      details:e.name==="AbortError"?"OpenStreetMap request timeout":e.message
+      details:error.name==="AbortError"
+        ?"OpenStreetMap API Timeout"
+        :error.message
     });
   }
 });
 
-app.listen(PORT,"0.0.0.0",()=>console.log(`VATSIM Gate Finder STABLE-6 on ${PORT}`));
+app.get("/api/refresh/:icao",async(req,res)=>{
+  const icao=String(req.params.icao||"").trim().toUpperCase();
+  gateCache.delete(icao);
+  ifatcCache.delete(icao);
+  res.json({ok:true,icao,cacheCleared:true});
+});
+
+app.listen(PORT,"0.0.0.0",()=>{
+  console.log(`VATSIM Gate Finder v7 listening on ${PORT}`);
+});

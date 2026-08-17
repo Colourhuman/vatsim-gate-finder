@@ -1,17 +1,18 @@
-Deploy Stable-6
-================
+VATSIM Gate Finder v7 deployment
+---------------------------------
 Replace:
-- server.js
-- index.html
-- package.json
-- README.md
+server.js
+index.html
+package.json
+README.md
 
 Render:
-Build Command: npm install
-Start Command: npm start
+Build: npm install
+Start: npm start
 
-Test after deploy:
-https://YOUR-SERVICE.onrender.com/api/health
-https://YOUR-SERVICE.onrender.com/api/gates?icao=EDDK&airline=EWG&aircraft=A320
+After deploy:
+GET /api/health
+GET /api/gates?icao=EDDK&airline=EWG&aircraft=A320
 
-This version has NO Overpass dependency.
+Forcing fresh gate data:
+GET /api/refresh/EDDK
