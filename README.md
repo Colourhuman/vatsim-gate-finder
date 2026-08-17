@@ -1,30 +1,43 @@
-# VATSIM Gate Finder 3.0
+# VATSIM Gate Finder 4.0
 
-## Warum diese Version schneller/stabiler ist
+## Fixes
 
-Render hatte wiederholt Timeouts bei öffentlichen Overpass-Instanzen. Deshalb:
+### 1. Doppelte Gates
+V4 fragt für einzelne Stand-/Gate-Positionen nur noch OSM-Nodes ab.
+`parking_position`-Ways sind Park-/Taxi-Spuren und wurden vorher als einzelne Gates
+interpretiert. Zusätzlich werden gleich benannte Positionen innerhalb von 35 m
+dedupliziert.
 
-- Kein sequentielles Abfragen von drei Overpass-Servern.
-- Airport-Koordinaten kommen aus OurAirports (tägliche Open-Data-Aktualisierung).
-- Gate-Daten kommen über den HPI Overpass Reverse Proxy.
-- Gate-Daten werden serverseitig 7 Tage gecacht.
-- VATSIM-Live-Daten bleiben dynamisch und werden höchstens alle 12 Sekunden neu geladen.
+### 2. Ein Flugzeug belegt nur ein Gate
+Die alte Logik prüfte jedes Gate separat. Deshalb konnte ein einzelnes Flugzeug
+mehrere Gates rot machen.
 
-## Render
+V4 weist zuerst jedem VATSIM-Flug genau EIN nächstgelegenes Gate zu. Ein Gate kann
+anschließend ebenfalls nur einen belegenden Flug bekommen.
 
-Build:
-npm install
+### 3. Taxiende Flugzeuge werden nicht mehr als Gate-Belegung gezählt
+Standard:
+- Belegungsradius: 55 m
+- maximale Groundspeed: 20 kt
+- Ausnahme: innerhalb von 25 m darf ein Flugzeug auch etwas schneller sein.
 
-Start:
-npm start
+### 4. Aircraft-Größe
+V4 kennt für häufige ICAO-Typen:
+- ICAO Aerodrome Reference Code A-F
+- ungefähre Spannweite
+
+Die ausgewählte Aircraft-Größe wird oben angezeigt.
+
+### 5. Airline
+Die Airline des VATSIM-Flugs wird aus dem Callsign-Präfix erkannt.
+Gate-spezifische Airline-Regeln werden nur dann gesetzt, wenn die OSM-Gate-Daten
+ein airline/operator/network/brand-Tag liefern. Ohne solche Daten gilt das Gate
+als allgemein nutzbar.
+
+## Render Environment Variables
 
 Optional:
-OCCUPANCY_RADIUS_M=90
+OCCUPANCY_RADIUS_M=55
+OCCUPANCY_MAX_GROUNDSPEED_KTS=20
+DIRECT_GATE_RADIUS_M=25
 OSM_RADIUS_M=5000
-
-## Test
-
-/ api / health
-/ api / gates ? icao=LDSP&airline=EWG&aircraft=A320
-
-(Leerzeichen in den Pfaden natürlich entfernen.)
