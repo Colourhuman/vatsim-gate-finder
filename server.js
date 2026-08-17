@@ -106,10 +106,15 @@ app.get('/api/gates', async (req, res) => {
         return res.status(400).json({ error: 'Bitte gib einen ICAO-Code an, z.B. ?icao=EDDF' });
     }
 
-    // Overpass API-Abfrage für OpenStreetMap
-    const overpassUrl = 'https://overpass-api.de/api/interpreter';
+    // Liste von Daten-Servern (falls einer mal ausfällt oder blockiert)
+    const overpassUrls = [
+        'https://overpass-api.de/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
+        'https://overpass.private.coffee/api/interpreter'
+    ];
+
     const query = `
-        [out:json];
+        [out:json][timeout:25];
         area["icao"="${icao}"]->.searchArea;
         (
           node["aeroway"="parking_position"](area.searchArea);
@@ -118,32 +123,48 @@ app.get('/api/gates', async (req, res) => {
         out body;
     `;
 
-    try {
-        const response = await fetch(overpassUrl, {
-            method: 'POST',
-            body: 'data=' + encodeURIComponent(query)
-        });
+    let data = null;
+    let lastError = null;
 
-        const data = await response.json();
+    // Nacheinander die Server probieren
+    for (const url of overpassUrls) {
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'User-Agent': 'VATSIM-Gate-Finder/1.0 (https://vatsim-gate-finder.onrender.com)'
+                },
+                body: 'data=' + encodeURIComponent(query)
+            });
 
-        // Daten sauber aufbereiten
-        const gates = data.elements.map(item => ({
-            name: item.tags?.ref || item.tags?.name || 'Unbenannt',
-            type: item.tags?.aeroway === 'gate' ? 'Gate' : 'Standplatz',
-            lat: item.lat,
-            lon: item.lon
-        }));
-
-        res.json({
-            icao: icao,
-            total_gates: gates.length,
-            gates: gates
-        });
-
-    } catch (error) {
-        console.error('Fehler beim Abrufen der Gates:', error);
-        res.status(500).json({ error: 'Fehler beim Laden der Gate-Daten.' });
+            if (response.ok) {
+                data = await response.json();
+                break; // Erfolg! Schleife beenden.
+            }
+        } catch (err) {
+            lastError = err;
+        }
     }
+
+    if (!data || !data.elements) {
+        console.error('Fehler beim Abrufen der Gates:', lastError);
+        return res.status(500).json({ error: 'Fehler beim Laden der Gate-Daten.' });
+    }
+
+    // Daten sauber aufbereiten
+    const gates = data.elements.map(item => ({
+        name: item.tags?.ref || item.tags?.name || 'Unbenannt',
+        type: item.tags?.aeroway === 'gate' ? 'Gate' : 'Standplatz',
+        lat: item.lat,
+        lon: item.lon
+    }));
+
+    res.json({
+        icao: icao,
+        total_gates: gates.length,
+        gates: gates
+    });
 });
 app.listen(PORT, () => {
   console.log(`Server läuft mit Frontend auf http://localhost:${PORT}`);
