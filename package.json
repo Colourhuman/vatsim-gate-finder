@@ -1,8 +1,8 @@
 {
   "name": "vatsim-gate-finder",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "private": true,
-  "description": "Automated VATSIM Gate Finder",
+  "description": "Production-ready VATSIM Gate Finder",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

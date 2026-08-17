@@ -1,43 +1,90 @@
-# VATSIM Gate Finder 4.0
+# VATSIM Gate Finder – Final
 
-## Fixes
+## What this version does
 
-### 1. Doppelte Gates
-V4 fragt für einzelne Stand-/Gate-Positionen nur noch OSM-Nodes ab.
-`parking_position`-Ways sind Park-/Taxi-Spuren und wurden vorher als einzelne Gates
-interpretiert. Zusätzlich werden gleich benannte Positionen innerhalb von 35 m
-dedupliziert.
+### Gate source strategy
 
-### 2. Ein Flugzeug belegt nur ein Gate
-Die alte Logik prüfte jedes Gate separat. Deshalb konnte ein einzelnes Flugzeug
-mehrere Gates rot machen.
+1. If `gates.json` contains the requested airport, those curated positions are used.
+   This is the high-accuracy source for airports you already verified.
+2. If an airport is not present in `gates.json`, the service automatically discovers
+   `aeroway=gate` and `aeroway=parking_position` nodes from OpenStreetMap through the
+   HPI Overpass proxy.
+3. Duplicate positions are collapsed by normalized stand name and distance.
 
-V4 weist zuerst jedem VATSIM-Flug genau EIN nächstgelegenes Gate zu. Ein Gate kann
-anschließend ebenfalls nur einen belegenden Flug bekommen.
+This means you do NOT have to manually enter every new airport. Your existing
+`gates.json` can remain as a high-confidence airport overlay, while unknown
+airports are discovered automatically.
 
-### 3. Taxiende Flugzeuge werden nicht mehr als Gate-Belegung gezählt
-Standard:
-- Belegungsradius: 55 m
-- maximale Groundspeed: 20 kt
-- Ausnahme: innerhalb von 25 m darf ein Flugzeug auch etwas schneller sein.
+### Live VATSIM occupancy
 
-### 4. Aircraft-Größe
-V4 kennt für häufige ICAO-Typen:
-- ICAO Aerodrome Reference Code A-F
-- ungefähre Spannweite
+VATSIM's public Data API v3 is queried separately and cached for 10 seconds.
+The feed itself is regenerated every 15 seconds.
 
-Die ausgewählte Aircraft-Größe wird oben angezeigt.
+A pilot is assigned to at most one gate:
+- parked aircraft: up to 70 m
+- slow taxi: up to 65 m
+- faster taxi: up to 32 m
 
-### 5. Airline
-Die Airline des VATSIM-Flugs wird aus dem Callsign-Präfix erkannt.
-Gate-spezifische Airline-Regeln werden nur dann gesetzt, wenn die OSM-Gate-Daten
-ein airline/operator/network/brand-Tag liefern. Ohne solche Daten gilt das Gate
-als allgemein nutzbar.
+The assignment is one-to-one, so the same aircraft cannot mark four gates as
+occupied.
 
-## Render Environment Variables
+### Aircraft recognition
 
-Optional:
-OCCUPANCY_RADIUS_M=55
-OCCUPANCY_MAX_GROUNDSPEED_KTS=20
-DIRECT_GATE_RADIUS_M=25
-OSM_RADIUS_M=5000
+The service refreshes a public aircraft reference dataset every 7 days. It
+supports ICAO and IATA designators and gets:
+- aircraft name
+- manufacturer
+- wingspan
+- inferred aerodrome reference category A-F
+
+Examples:
+A320, 320, A20N, 32N, B38M, 7M8, B738, etc.
+
+### Airline recognition
+
+A public airline reference dataset is refreshed every 7 days. Airline input can
+be:
+- ICAO code
+- IATA code
+- airline name
+- telephony/callsign
+
+The live VATSIM airline is resolved from the callsign prefix, with a fallback to
+the raw three-letter prefix for virtual airlines or uncommon callsigns.
+
+## Important limitation
+
+VATSIM's live feed does not contain a "this aircraft is parked at stand X"
+field. Occupancy must therefore be inferred from the aircraft's live latitude,
+longitude and ground speed.
+
+Likewise, a globally authoritative public database containing every airport's
+current airline-to-stand restrictions does not exist. The service therefore uses
+the verified `gates.json` data when available and OSM as a discovery fallback.
+Unknown OSM restrictions are never invented.
+
+## Render
+
+Build Command:
+`npm install`
+
+Start Command:
+`npm start`
+
+Optional Environment Variables:
+- `OCCUPANCY_RADIUS_M=65`
+- `PARKED_RADIUS_M=70`
+- `TAXI_RADIUS_M=32`
+- `OSM_RADIUS_M=5000`
+
+## Keep gates.json
+
+Do NOT delete your existing `gates.json`.
+It is now an automatic high-accuracy override for airports you have already
+verified. You do not need to add every future airport to it.
+
+## API
+
+`GET /api/gates?icao=EDDK&airline=EWG&aircraft=A320`
+
+`GET /api/health`

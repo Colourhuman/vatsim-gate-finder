@@ -1,0 +1,17 @@
+FINAL deployment
+=================
+Replace only:
+- server.js
+- index.html
+- package.json
+
+KEEP:
+- gates.json
+- package-lock.json (npm install may update it)
+
+Render:
+Build Command: npm install
+Start Command: npm start
+
+After deploy test:
+https://YOUR-SERVICE.onrender.com/api/health
