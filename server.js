@@ -1,10 +1,19 @@
-// ==========================================
-// FINALE & STABILE GATE-ABFRAGE MIT CACHE
-// ==========================================
+const express = require('express');
+const path = require('path');
 
-// Speicher im Server (Damit geladene Flughäfen ab dem 2. Mal SOFORT laden)
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+// Statische Dateien (Frontend / HTML / JS) bereitstellen
+app.use(express.static(__dirname));
+app.use(express.json());
+
+// Arbeitsspeicher-Cache für Gate-Daten
 const gateCache = new Map();
 
+// ==========================================
+// GATE-ABFRAGE API
+// ==========================================
 app.get('/api/gates', async (req, res) => {
     const icao = req.query.icao ? req.query.icao.toUpperCase().trim() : null;
 
@@ -12,13 +21,13 @@ app.get('/api/gates', async (req, res) => {
         return res.status(400).json({ error: 'Bitte gib einen gültigen ICAO-Code an, z.B. ?icao=EDDF' });
     }
 
-    // 1. Wenn der Flughafen schon im Speicher liegt -> Sofort antworten (0,01 Sekunden!)
+    // 1. Aus dem Cache laden (0,01 Sekunden!)
     if (gateCache.has(icao)) {
-        console.log(`[CACHE HIT] Daten für ${icao} direkt aus dem Speicher geliefert.`);
+        console.log(`[CACHE] Daten für ${icao} geladen.`);
         return res.json(gateCache.get(icao));
     }
 
-    // 2. Drei globale Daten-Server als Reserve
+    // 2. Reserve-Server
     const overpassUrls = [
         'https://overpass-api.de/api/interpreter',
         'https://overpass.kumi.systems/api/interpreter',
@@ -37,11 +46,11 @@ app.get('/api/gates', async (req, res) => {
 
     let rawData = null;
 
-    // 3. Server nacheinander probieren
+    // 3. Server nacheinander anfragen
     for (const url of overpassUrls) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 6000); // Max 6 Sekunden Warten
+            const timeoutId = setTimeout(() => controller.abort(), 6000);
 
             const response = await fetch(url, {
                 method: 'POST',
@@ -58,7 +67,7 @@ app.get('/api/gates', async (req, res) => {
             if (response.ok) {
                 rawData = await response.json();
                 if (rawData && rawData.elements && rawData.elements.length > 0) {
-                    break; // Erfolgreich! Schleife abbrechen.
+                    break;
                 }
             }
         } catch (err) {
@@ -66,17 +75,17 @@ app.get('/api/gates', async (req, res) => {
         }
     }
 
-    // 4. Falls kein Server geantwortet hat oder geblockt wurde
+    // 4. Absicherung falls keine Antwort kommt
     if (!rawData || !rawData.elements || rawData.elements.length === 0) {
         return res.status(503).json({
-            error: 'Die Gate-Datenbank reagiert gerade nicht. Bitte lade die Seite in wenigen Sekunden neu.',
+            error: 'Die Gate-Datenbank ist kurz überlastet. Bitte Seite in wenigen Sekunden neu laden.',
             icao: icao,
             total_gates: 0,
             gates: []
         });
     }
 
-    // 5. Daten aufräumen & Unbenannte entfernen
+    // 5. Daten filtern
     const gates = rawData.elements
         .map(item => ({
             name: item.tags?.ref || item.tags?.name || 'Unbenannt',
@@ -92,10 +101,15 @@ app.get('/api/gates', async (req, res) => {
         gates: gates
     };
 
-    // 6. Im Speicher ablegen für zukünftige Aufrufe
+    // 6. Speichern
     if (gates.length > 0) {
         gateCache.set(icao, result);
     }
 
     res.json(result);
+});
+
+// Server starten (Hört auf Render-Port)
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server läuft mit Frontend auf Port ${PORT}`);
 });
