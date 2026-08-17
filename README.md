@@ -1,18 +1,14 @@
-# VATSIM Gate Finder 2.1
+# VATSIM Gate Finder 3.0
 
-## Änderungen gegenüber der ersten Version
+## Warum diese Version schneller/stabiler ist
 
-- Airport wird zuerst per ICAO aus OSM ermittelt.
-- Kein OSM-`area`-Lookup mehr.
-- Gate-Daten werden anschließend im Umkreis des Airport-Zentrums gesucht.
-- `aeroway=parking_position` wird als Node UND Way verarbeitet.
-- `aeroway=gate` wird ebenfalls verarbeitet.
-- Overpass-Anfragen nutzen GET und bis zu 35 Sekunden Client-Timeout.
-- Mehrere Overpass-Server sind als Fallback hinterlegt.
-- VATSIM-Ausfall verhindert nicht mehr das Laden der Gate-Liste.
-- OSM-Ergebnisse werden 24 h serverseitig gecacht.
-- VATSIM wird maximal alle 12 Sekunden neu geladen.
-- `OVERPASS_RADIUS_M` und `OCCUPANCY_RADIUS_M` können über Render Environment Variables angepasst werden.
+Render hatte wiederholt Timeouts bei öffentlichen Overpass-Instanzen. Deshalb:
+
+- Kein sequentielles Abfragen von drei Overpass-Servern.
+- Airport-Koordinaten kommen aus OurAirports (tägliche Open-Data-Aktualisierung).
+- Gate-Daten kommen über den HPI Overpass Reverse Proxy.
+- Gate-Daten werden serverseitig 7 Tage gecacht.
+- VATSIM-Live-Daten bleiben dynamisch und werden höchstens alle 12 Sekunden neu geladen.
 
 ## Render
 
@@ -23,5 +19,12 @@ Start:
 npm start
 
 Optional:
-OVERPASS_RADIUS_M=5000
 OCCUPANCY_RADIUS_M=90
+OSM_RADIUS_M=5000
+
+## Test
+
+/ api / health
+/ api / gates ? icao=LDSP&airline=EWG&aircraft=A320
+
+(Leerzeichen in den Pfaden natürlich entfernen.)
