@@ -1,37 +1,27 @@
-# VATSIM Gate Finder – Automated
+# VATSIM Gate Finder 2.1
 
-Diese Variante entfernt die manuelle Gate-Pflege als Voraussetzung für den Betrieb.
+## Änderungen gegenüber der ersten Version
 
-## Datenquellen
-
-- Gate-/Standpositionen: OpenStreetMap via Overpass
-- Live-VATSIM-Belegung: `https://data.vatsim.net/v3/vatsim-data.json`
-- VATSIM-Livefeed wird von VATSIM alle 15 Sekunden neu erzeugt.
-
-## Belegungslogik
-
-Ein Gate gilt als belegt, wenn sich ein VATSIM-Pilot innerhalb von `OCCUPANCY_RADIUS_M`
-befindet. Standard: 90 m.
-
-Render Environment Variable:
-`OCCUPANCY_RADIUS_M=90`
+- Airport wird zuerst per ICAO aus OSM ermittelt.
+- Kein OSM-`area`-Lookup mehr.
+- Gate-Daten werden anschließend im Umkreis des Airport-Zentrums gesucht.
+- `aeroway=parking_position` wird als Node UND Way verarbeitet.
+- `aeroway=gate` wird ebenfalls verarbeitet.
+- Overpass-Anfragen nutzen GET und bis zu 35 Sekunden Client-Timeout.
+- Mehrere Overpass-Server sind als Fallback hinterlegt.
+- VATSIM-Ausfall verhindert nicht mehr das Laden der Gate-Liste.
+- OSM-Ergebnisse werden 24 h serverseitig gecacht.
+- VATSIM wird maximal alle 12 Sekunden neu geladen.
+- `OVERPASS_RADIUS_M` und `OCCUPANCY_RADIUS_M` können über Render Environment Variables angepasst werden.
 
 ## Render
 
-Node.js Web Service, Start:
+Build:
+npm install
 
-`npm install && node server.js`
+Start:
+npm start
 
-Node 18+ empfohlen (für eingebautes `fetch`).
-
-## Wichtige Grenze
-
-OpenStreetMap kann Positionen sehr gut liefern, aber Airline-Zuordnungen sind nicht
-an jedem Flughafen vollständig gepflegt. Deshalb gilt:
-
-1. Gate mit Airline-Tag -> Airline muss passen.
-2. Gate ohne Airline-Tag -> als allgemein nutzbar behandeln.
-3. Aircraft-Kompatibilität -> ICAO-Code -> Kategorie / Spannweite.
-4. VATSIM-Belegung -> geografische Distanz.
-
-Damit braucht der Betreiber keine vollständige `gates.json` mehr.
+Optional:
+OVERPASS_RADIUS_M=5000
+OCCUPANCY_RADIUS_M=90

@@ -1,142 +1,61 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VATSIM Gate Finder</title>
-  <style>
-    * { box-sizing: border-box; font-family: Inter, Segoe UI, Roboto, Arial, sans-serif; }
-    body { margin: 0; min-height: 100vh; background:#0b1220; color:#e5e7eb; padding:32px 16px; }
-    .container { max-width:1100px; margin:0 auto; }
-    h1 { margin:0 0 6px; text-align:center; }
-    .sub { text-align:center; color:#94a3b8; margin:0 0 24px; }
-    .form { display:grid; grid-template-columns:repeat(3, 1fr) auto; gap:12px; background:#111827; padding:16px; border:1px solid #243244; border-radius:14px; }
-    label { display:block; font-size:12px; text-transform:uppercase; color:#93c5fd; font-weight:700; margin:0 0 6px; }
-    input, select, button { width:100%; padding:12px; border-radius:9px; border:1px solid #334155; background:#0f172a; color:#fff; }
-    button { background:#0284c7; border:0; font-weight:700; cursor:pointer; }
-    .meta { margin:18px 0; color:#94a3b8; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
-    .card { padding:15px; border-radius:12px; border:1px solid #334155; background:#111827; }
-    .card.available { border-color:#22c55e; background:#0d2017; }
-    .card.occupied { border-color:#ef4444; background:#241113; }
-    .card.incompatible { border-color:#f59e0b; background:#241b0c; }
-    .name { font-size:21px; font-weight:800; }
-    .badge { display:inline-block; margin-top:7px; padding:4px 8px; border-radius:99px; font-size:11px; font-weight:800; text-transform:uppercase; }
-    .ok { background:#14532d; color:#bbf7d0; }
-    .busy { background:#7f1d1d; color:#fecaca; }
-    .warn { background:#78350f; color:#fde68a; }
-    .line { margin-top:8px; color:#cbd5e1; font-size:13px; }
-    .tiny { margin-top:10px; color:#64748b; font-size:11px; border-top:1px solid #243244; padding-top:8px; }
-    .error { color:#fecaca; background:#3f1218; border:1px solid #7f1d1d; padding:12px; border-radius:10px; }
-    @media (max-width:850px) { .form { grid-template-columns:1fr; } }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>VATSIM Gate Finder</title>
+<style>
+*{box-sizing:border-box;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif}
+body{margin:0;min-height:100vh;background:#0b1220;color:#e5e7eb;padding:32px 16px}
+.container{max-width:1100px;margin:auto}h1{margin:0 0 6px;text-align:center}.sub{text-align:center;color:#94a3b8;margin:0 0 24px}
+.form{display:grid;grid-template-columns:repeat(3,1fr) auto;gap:12px;background:#111827;padding:16px;border:1px solid #243244;border-radius:14px}
+label{display:block;font-size:12px;text-transform:uppercase;color:#93c5fd;font-weight:700;margin-bottom:6px}
+input,button{width:100%;padding:12px;border-radius:9px;border:1px solid #334155;background:#0f172a;color:#fff}
+button{background:#0284c7;border:0;font-weight:700;cursor:pointer}
+.meta{margin:18px 0;color:#94a3b8;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.card{padding:15px;border-radius:12px;border:1px solid #334155;background:#111827}
+.card.available{border-color:#22c55e;background:#0d2017}.card.occupied{border-color:#ef4444;background:#241113}.card.incompatible{border-color:#f59e0b;background:#241b0c}
+.name{font-size:21px;font-weight:800}.badge{display:inline-block;margin-top:7px;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:800;text-transform:uppercase}
+.ok{background:#14532d;color:#bbf7d0}.busy{background:#7f1d1d;color:#fecaca}.warn{background:#78350f;color:#fde68a}
+.line{margin-top:8px;color:#cbd5e1;font-size:13px}.tiny{margin-top:10px;color:#64748b;font-size:11px;border-top:1px solid #243244;padding-top:8px}
+.error{color:#fecaca;background:#3f1218;border:1px solid #7f1d1d;padding:12px;border-radius:10px}
+@media(max-width:850px){.form{grid-template-columns:1fr}}
+</style>
 </head>
 <body>
 <div class="container">
-  <h1>VATSIM Gate Finder</h1>
-  <p class="sub">Automatische Gate-Daten + echte VATSIM Live-Belegung</p>
-
-  <div class="form">
-    <div>
-      <label for="icao">Airport ICAO</label>
-      <input id="icao" maxlength="4" placeholder="EDDL">
-    </div>
-    <div>
-      <label for="airline">Airline ICAO / Callsign</label>
-      <input id="airline" placeholder="EWG">
-    </div>
-    <div>
-      <label for="aircraft">Aircraft ICAO</label>
-      <input id="aircraft" placeholder="A320">
-    </div>
-    <div>
-      <label>&nbsp;</label>
-      <button onclick="searchGates()">Gates suchen</button>
-    </div>
-  </div>
-
-  <div id="status" class="meta"></div>
-  <div id="results"></div>
+<h1>VATSIM Gate Finder</h1>
+<p class="sub">Automatische Airport-Gates + echte VATSIM Live-Belegung</p>
+<div class="form">
+<div><label>Airport ICAO</label><input id="icao" maxlength="4" placeholder="LDSP"></div>
+<div><label>Airline ICAO / Code</label><input id="airline" placeholder="EWG"></div>
+<div><label>Aircraft ICAO</label><input id="aircraft" placeholder="A320"></div>
+<div><label>&nbsp;</label><button onclick="searchGates()">Gates suchen</button></div>
 </div>
-
+<div id="status" class="meta"></div><div id="results"></div>
+</div>
 <script>
-  const el = id => document.getElementById(id);
-
-  ["icao","airline","aircraft"].forEach(id => {
-    el(id).addEventListener("keydown", e => {
-      if (e.key === "Enter") searchGates();
-    });
-  });
-
-  function esc(value) {
-    return String(value ?? "").replace(/[&<>"']/g, c => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-    }[c]));
-  }
-
-  async function searchGates() {
-    const icao = el("icao").value.trim().toUpperCase();
-    const airline = el("airline").value.trim().toUpperCase();
-    const aircraft = el("aircraft").value.trim().toUpperCase();
-
-    if (!/^[A-Z0-9]{3,4}$/.test(icao)) {
-      el("results").innerHTML = '<div class="error">Bitte einen gültigen ICAO-Code eingeben.</div>';
-      return;
-    }
-
-    el("results").innerHTML = "";
-    el("status").innerText = "Lade Airport- und VATSIM-Daten …";
-
-    try {
-      const qs = new URLSearchParams({ icao });
-      if (airline) qs.set("airline", airline);
-      if (aircraft) qs.set("aircraft", aircraft);
-
-      const response = await fetch("/api/gates?" + qs.toString(), { cache: "no-store" });
-      const data = await response.json();
-
-      if (!response.ok) {
-        el("results").innerHTML = `<div class="error">${esc(data.error || "Unbekannter Fehler")}</div>`;
-        el("status").innerText = "";
-        return;
-      }
-
-      el("status").innerText =
-        `${data.available_count} passend + frei · ${data.occupied_count} belegt · ` +
-        `${data.incompatible_count} nicht passend · VATSIM-Feed ${data.vatsimFeedTimestamp || "unbekannt"}`;
-
-      const cards = data.gates.map(g => {
-        const cls = g.available ? "available" : (g.occupied ? "occupied" : "incompatible");
-        const badge = g.available
-          ? '<span class="badge ok">FREI & PASSEND</span>'
-          : g.occupied
-            ? '<span class="badge busy">BELEGT</span>'
-            : '<span class="badge warn">NICHT PASSEND</span>';
-
-        const occupant = g.occupant
-          ? `<div class="line"><strong>Besetzt durch:</strong> ${esc(g.occupant.callsign)} · ${esc(g.occupant.aircraft || "?")} · ${g.occupant.distanceM} m</div>`
-          : "";
-
-        const operators = g.airlines?.length ? g.airlines.join(", ") : "Keine Airline-Vorgabe";
-
-        return `
-          <div class="card ${cls}">
-            <div class="name">${esc(g.name)}</div>
-            ${badge}
-            <div class="line"><strong>Typ:</strong> ${esc(g.type)}</div>
-            <div class="line"><strong>Airlines:</strong> ${esc(operators)}</div>
-            <div class="line"><strong>Kategorie:</strong> ${esc(g.category || "unbekannt")} · <strong>Max. Spannweite:</strong> ${g.maxWingspanM ? esc(g.maxWingspanM + " m") : "unbekannt"}</div>
-            ${occupant}
-            <div class="tiny">${Number(g.lat).toFixed(5)}, ${Number(g.lon).toFixed(5)}</div>
-          </div>`;
-      }).join("");
-
-      el("results").innerHTML = `<div class="grid">${cards}</div>`;
-    } catch (error) {
-      el("status").innerText = "";
-      el("results").innerHTML = `<div class="error">Netzwerkfehler: ${esc(error.message)}</div>`;
-    }
-  }
+const $=id=>document.getElementById(id);
+["icao","airline","aircraft"].forEach(id=>$(id).addEventListener("keydown",e=>{if(e.key==="Enter")searchGates()}));
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+async function searchGates(){
+ const icao=$("icao").value.trim().toUpperCase(), airline=$("airline").value.trim().toUpperCase(), aircraft=$("aircraft").value.trim().toUpperCase();
+ if(!/^[A-Z0-9]{4}$/.test(icao)){ $("results").innerHTML='<div class="error">Bitte einen gültigen 4-stelligen ICAO-Code eingeben.</div>'; return; }
+ $("results").innerHTML=""; $("status").innerText="Lade Airport- und VATSIM-Daten …";
+ try{
+  const q=new URLSearchParams({icao}); if(airline)q.set("airline",airline); if(aircraft)q.set("aircraft",aircraft);
+  const r=await fetch("/api/gates?"+q,{cache:"no-store"}),d=await r.json();
+  if(!r.ok){$("results").innerHTML=`<div class="error">${esc(d.error||"Unbekannter Fehler")}<br><small>${esc(d.details||d.hint||"")}</small></div>`;$("status").innerText="";return;}
+  $("status").innerText=`${d.available_count} passend + frei · ${d.occupied_count} belegt · ${d.incompatible_count} nicht passend · ${d.total_gates} Positionen insgesamt`;
+  $("results").innerHTML='<div class="grid">'+d.gates.map(g=>{
+   const cls=g.available?"available":(g.occupied?"occupied":"incompatible");
+   const badge=g.available?'<span class="badge ok">FREI & PASSEND</span>':g.occupied?'<span class="badge busy">BELEGT</span>':'<span class="badge warn">NICHT PASSEND</span>';
+   const occ=g.occupant?`<div class="line"><strong>Besetzt durch:</strong> ${esc(g.occupant.callsign)} · ${esc(g.occupant.aircraft||"?")} · ${g.occupant.distanceM} m</div>`:"";
+   return `<div class="card ${cls}"><div class="name">${esc(g.name)}</div>${badge}<div class="line"><strong>Typ:</strong> ${esc(g.type)}</div><div class="line"><strong>Airlines:</strong> ${esc(g.airlines?.length?g.airlines.join(", "):"keine Vorgabe")}</div><div class="line"><strong>Kategorie:</strong> ${esc(g.category||"unbekannt")} · <strong>Spannweite:</strong> ${g.maxWingspanM?esc(g.maxWingspanM+" m"):"unbekannt"}</div>${occ}<div class="tiny">${Number(g.lat).toFixed(5)}, ${Number(g.lon).toFixed(5)} · OSM ${esc(g.osmType)}/${esc(g.osmId)}</div></div>`;
+  }).join("")+'</div>';
+ }catch(e){$("status").innerText="";$("results").innerHTML=`<div class="error">Netzwerkfehler: ${esc(e.message)}</div>`}
+}
 </script>
 </body>
 </html>
