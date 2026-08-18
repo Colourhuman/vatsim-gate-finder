@@ -1,9 +1,12 @@
-# VATSIM Gate Finder v13
+# VATSIM Gate Finder v14
 
-The tool deliberately uses only two authoritative layers:
-- OpenStreetMap `aeroway=parking_position` for physical stand positions.
-- VATSIM live data for current aircraft occupancy.
+The gate inventory is no longer limited to OpenStreetMap `aeroway=parking_position` objects.
 
-It does **not** invent airline-to-gate assignments or gate sizes. A size is shown only when the OSM object explicitly provides an ICAO aircraft reference code. Duplicate physical positions are collapsed before display.
+Sources:
+- IFATC airport gate inventory: complete named airport positions where available.
+- OpenStreetMap: physical coordinates and additional gate/parking-position objects.
+- VATSIM live data: current aircraft occupancy.
 
-Airline input/rules from previous versions were removed because guessed allocations create false results. Real-world airline allocations vary by airport and operation and should not be inferred from a generic gate name.
+The inventory is merged by normalized stand reference, so a stand present in both sources appears once. IFATC-only stands remain visible even if OSM has no coordinate; such stands cannot be spatially matched to a live aircraft until a coordinate exists in OSM.
+
+No airline-to-gate allocation is invented.

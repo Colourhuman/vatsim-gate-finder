@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VATSIM Gate Finder</title>
+<title>VATSIM Gate Finder v14</title>
 <style>
 :root{--bg:#070b12;--card:#0d1522;--line:#223148;--text:#f5f7fb;--muted:#91a2b8;--green:#22c55e;--red:#ef4444;--blue:#38bdf8}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#060a11,#0a111d);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
@@ -28,13 +28,13 @@ button:disabled{opacity:.6}.info{display:flex;gap:8px;flex-wrap:wrap;margin-top:
 <body>
 <div class="shell">
 <header class="hero"><div class="kicker">VATSIM LIVE</div><h1>Gate Finder</h1>
-<p>Zeigt echte Parkpositionen aus OpenStreetMap und deren aktuelle Belegung aus dem VATSIM-Livefeed. Es werden keine erfundenen Airline- oder Gate-Zuordnungen verwendet.</p></header>
+<p>Zeigt den vollständigen verfügbaren Positionsbestand aus IFATC und OpenStreetMap und gleicht die aktuelle Belegung mit dem VATSIM-Livefeed ab. OSM liefert Koordinaten für die räumliche Belegungsprüfung; IFATC ergänzt Positionen, die in OSM fehlen.</p></header>
 <section class="search"><div class="form">
 <div><label>Airport ICAO</label><input id="icao" maxlength="4" placeholder="EDDK"></div>
 <div><label>Aircraft (optional)</label><input id="aircraft" placeholder="A320 / A20N / B738"></div>
 <button id="go">Gates suchen</button>
 </div>
-<div class="info"><span class="pill">Positionen: OSM</span><span class="pill">Belegung: VATSIM</span><span class="pill">Keine erfundenen Airlines</span><span class="pill">Keine erfundenen Größen</span><span id="status"></span></div></section>
+<div class="info"><span class="pill">Positionen: IFATC + OSM</span><span class="pill">Belegung: VATSIM</span><span class="pill">Keine erfundenen Airlines</span><span class="pill">Größen: IFATC/OSM</span><span id="status"></span></div></section>
 <section id="summary"></section>
 <div class="toolbar"><div class="tabs">
 <button class="tab active" data-filter="all">Alle</button><button class="tab" data-filter="available">Frei</button><button class="tab" data-filter="occupied">Belegt</button>
@@ -57,8 +57,8 @@ function render(){
  $("results").innerHTML='<div class="grid">'+list.map(g=>{
   const o=g.occupant;
   return `<article class="card ${g.occupied?"occupied":"available"}"><div class="top"><div class="name">${esc(g.ref)}</div><span class="status ${g.occupied?"busy":"free"}">${g.occupied?"BELEGT":"FREI"}</span></div>
-  <div class="rows"><div class="row"><b>Quelle:</b> echte OSM-Parkposition</div>
-  <div class="row"><b>Größe:</b> ${esc(g.sizeLabel)}</div>
+  <div class="rows"><div class="row"><b>Quelle:</b> ${esc(g.sourceName||"IFATC/OSM")}</div>
+  <div class="row"><b>Größe:</b> ${esc(g.sizeLabel)}</div>${!Number.isFinite(g.lat)?`<div class="row"><b>Live-Mapping:</b> keine OSM-Koordinate</div>`:""}
   ${o?`<div class="occupant"><div class="call">${esc(o.callsign)}</div><div class="row"><b>Aircraft:</b> ${esc(o.aircraft.icao)}</div><div class="row"><b>Entfernung:</b> ${esc(o.distanceM)} m</div><div class="row"><b>Speed:</b> ${esc(o.groundspeed)} kt</div></div>`:""}
   </div></article>`
  }).join("")+'</div>'

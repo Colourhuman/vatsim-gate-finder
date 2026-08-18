@@ -1,8 +1,8 @@
 {
   "name": "vatsim-gate-finder",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "private": true,
-  "description": "VATSIM Gate Finder using complete airport bbox and live spatial occupancy",
+  "description": "VATSIM Gate Finder using IFATC airport inventory, OpenStreetMap coordinates and VATSIM live occupancy",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
