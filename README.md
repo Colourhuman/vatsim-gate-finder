@@ -1,53 +1,101 @@
-# VATSIM Gate Finder v9
+# VATSIM Gate Finder v10
 
-## Main fix
+## Was in v10 behoben wurde
 
-v8 still assumed a small area around the airport reference point. That is not
-safe for large airports like Heathrow.
+### 1. Kein Fuzzy-Gate-Matching mehr
+Die alte Version konnte z. B. durch Suffix-Matching `D11` mit `11` oder einem
+anderen ähnlichen Stand verwechseln. v10 akzeptiert physische OSM-Anker nur noch
+bei einem **exakten Stand-Token**. Dadurch werden falsche Gate-Koordinaten nicht
+mehr aus Namensähnlichkeit erzeugt.
 
-v9 first resolves the airport's real OpenStreetMap bounding box through
-Nominatim, then tiles the COMPLETE airport bbox and reads all OSM
-`parking_position` nodes and ways.
+Wenn ein IFATC-Gate keinen eindeutigen physischen OSM-Anker besitzt, bleibt es
+unverankert statt auf ein anderes Gate gesetzt zu werden.
 
-For parking-position ways the final member node is used as the nose-wheel stop
-anchor.
+### 2. Ein physischer Stand = maximal ein Gate
+Wenn mehrere IFATC-Einträge auf denselben OSM-Parkpunkt zeigen, wird der
+Parkpunkt nicht mehr doppelt dargestellt.
 
-## Occupancy
+### 3. VATSIM-Belegung
+Die Belegung wird global als 1:1-Zuordnung berechnet:
+- ein VATSIM-Flugzeug kann nur ein Gate belegen
+- ein Gate kann nur von einem Flugzeug belegt werden
+- stehende Flugzeuge haben Priorität
+- schnell rollende Flugzeuge werden nur mit kleinerem Radius berücksichtigt
 
-The VATSIM aircraft is considered at the airport based on spatial position,
-NOT only on the flight-plan arrival/departure.
+Aktuelle Standardradien:
+- 0–2 kt: 35 m
+- 2–8 kt: 22 m
+- >8 kt: 13 m
 
-This fixes missing aircraft with:
-- changed/incorrect flightplans
-- blank flightplan airport fields
-- unusual/virtual callsigns
+### 4. Airline-Regeln werden wirklich verwendet
+Die alte Version hat die eingegebene Airline praktisch nicht zur Gate-Auswahl
+verwendet. v10 normalisiert ICAO, IATA und Namen und wendet danach
+flughafenspezifische Regeln an.
 
-Flightplan departure/arrival is only used as a sanity filter for fast-moving
-aircraft outside the airport.
+Beispiele:
+- `CFG`, `DE`, `Condor` → CFG
+- `EWG`, `EW`, `Eurowings` → EWG
+- `DLH`, `LH`, `Lufthansa` → DLH
 
-Every VATSIM aircraft is assigned to at most one physical stand.
+### 5. Aircraft-Kompatibilität
+ICAO- und IATA-Aircraft-Codes werden normalisiert. Gate-Code und, falls OSM
+vorhanden, maximale Spannweite werden berücksichtigt.
 
-Radii:
-- stopped: 55 m
-- 0-8 kt: 34 m
-- >8 kt taxi: 18 m
+### 6. Airport-Regeln
+`airport-rules.json` enthält getrennte Regeln für:
+- Terminal
+- Airline
+- Gate-/Standbereiche
+- Sonderstände
+- Aircraft-Größe
 
-## Debug
+Aktuell besonders berücksichtigt:
+- EDDK Köln/Bonn
+- EDDF Frankfurt/Main
 
-`/api/gates?icao=EGLL`
+Die Regeln sind bewusst in einer separaten JSON-Datei, damit weitere Airports
+ohne Änderung der Matching-Engine ergänzt werden können.
 
-The JSON includes:
-- `VATSIMAircraftInsideAirportBounds`
-- `assignedAircraft`
-- exact gate assignments with aircraft position and distance
-- number of physical gate anchors
+## EDDF
 
-## Render
+Die Frankfurt-Regeln orientieren sich an der aktuellen VATSIM-Germany
+Knowledgebase:
+- A-Stands: überwiegend Lufthansa/Star Alliance
+- A50–A69: Lufthansa
+- B/C: Star Alliance / entsprechende Langstreckenbereiche
+- D/E: Terminal 2
+- J: Terminal 3, aktuelle Non-Schengen-Airlines
+- F/V: Remote-/Sonderbereiche
+- Condor: Terminal 1 / B-Bereich bis zum geplanten Umzug in T3 im Sommer 2027
 
-Build:
+## EDDK
+
+Die Regeln berücksichtigen:
+- Terminal 1: A/B/C
+- Terminal 2: D
+- Cargo: E/F/W
+- Maintenance: U
+- GA/Cargo: V
+- Sonderzuordnungen für BAW, THY, MSR und DLH
+- Eurowings/Ryanair können A–D nutzen, weil die reale Gate-Nutzung nicht
+  ausschließlich aus dem Check-in-Terminal abgeleitet werden darf.
+
+## Datenquellen
+
+- VATSIM live data
+- IFATC gate data
+- OpenStreetMap aeroway parking positions
+- Airport-spezifische Regeln in `airport-rules.json`
+
+## Start
+
+```bash
 npm install
-
-Start:
 npm start
+```
 
-No Overpass and no gates.json are required.
+Render:
+- Build command: `npm install`
+- Start command: `npm start`
+
+Node.js >= 18.

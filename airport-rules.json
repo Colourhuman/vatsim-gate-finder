@@ -1,0 +1,456 @@
+{
+  "version": 1,
+  "lastUpdated": "2026-08-18",
+  "airports": {
+    "EDDF": {
+      "name": "Frankfurt/Main",
+      "notes": [
+        "Current VATSIM Germany guidance is used for terminal/airline rules.",
+        "Condor remains in Terminal 1 until the planned summer 2027 move to Terminal 3."
+      ],
+      "gateRules": [
+        {
+          "prefixes": [
+            "A5"
+          ],
+          "terminal": "T1",
+          "airlines": [
+            "DLH"
+          ],
+          "category": "C"
+        },
+        {
+          "prefixes": [
+            "A"
+          ],
+          "terminal": "T1",
+          "airlines": [
+            "DLH",
+            "AUA",
+            "SWR",
+            "TAP",
+            "AEE",
+            "UAL"
+          ]
+        },
+        {
+          "prefixes": [
+            "B",
+            "C"
+          ],
+          "terminal": "T1",
+          "airlines": [
+            "DLH",
+            "AUA",
+            "SWR",
+            "TAP",
+            "AEE",
+            "UAL",
+            "SIA",
+            "THA",
+            "ANA",
+            "AAR",
+            "QTR"
+          ]
+        },
+        {
+          "prefixes": [
+            "D",
+            "E"
+          ],
+          "terminal": "T2"
+        },
+        {
+          "prefixes": [
+            "J"
+          ],
+          "terminal": "T3",
+          "airlines": [
+            "CAL",
+            "CES",
+            "CPA",
+            "CSN",
+            "ETD",
+            "GFA",
+            "KAC",
+            "KAL",
+            "OMA",
+            "QTR",
+            "SVA",
+            "TWB",
+            "UAE"
+          ]
+        },
+        {
+          "prefixes": [
+            "H"
+          ],
+          "terminal": "T3"
+        },
+        {
+          "prefixes": [
+            "G"
+          ],
+          "terminal": "T3-remote"
+        },
+        {
+          "prefixes": [
+            "F"
+          ],
+          "terminal": "remote"
+        },
+        {
+          "prefixes": [
+            "V"
+          ],
+          "terminal": "remote"
+        }
+      ],
+      "airlines": {
+        "CFG": {
+          "name": "Condor",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "B"
+          ]
+        },
+        "DLH": {
+          "name": "Lufthansa",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "AUA": {
+          "name": "Austrian Airlines",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "SWR": {
+          "name": "SWISS",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "TAP": {
+          "name": "TAP Air Portugal",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "AEE": {
+          "name": "Aegean Airlines",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "UAL": {
+          "name": "United Airlines",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "UAE": {
+          "name": "Emirates",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "QTR": {
+          "name": "Qatar Airways",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "ETD": {
+          "name": "Etihad Airways",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "KAL": {
+          "name": "Korean Air",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "CPA": {
+          "name": "Cathay Pacific",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "CAL": {
+          "name": "China Airlines",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "CES": {
+          "name": "China Eastern",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "CSN": {
+          "name": "China Southern",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "GFA": {
+          "name": "Gulf Air",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "KAC": {
+          "name": "Kuwait Airways",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "OMA": {
+          "name": "Oman Air",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "SVA": {
+          "name": "Saudia",
+          "terminal": "T3",
+          "allowedPrefixes": [
+            "J"
+          ]
+        },
+        "JAL": {
+          "name": "Japan Airlines",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "D",
+            "E"
+          ]
+        },
+        "ANA": {
+          "name": "ANA",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "D",
+            "E"
+          ]
+        },
+        "BAW": {
+          "name": "British Airways",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "D",
+            "E"
+          ]
+        },
+        "AFR": {
+          "name": "Air France",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "D",
+            "E"
+          ]
+        },
+        "THY": {
+          "name": "Turkish Airlines",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "D",
+            "E"
+          ]
+        }
+      }
+    },
+    "EDDK": {
+      "name": "Köln/Bonn",
+      "notes": [
+        "Terminal 1 uses aprons A-C; Terminal 2 uses apron D.",
+        "VATSIM Germany states that parking positions are assigned by airline and aircraft type according to real-world usage."
+      ],
+      "gateRules": [
+        {
+          "prefixes": [
+            "A",
+            "B",
+            "C"
+          ],
+          "terminal": "T1"
+        },
+        {
+          "prefixes": [
+            "D"
+          ],
+          "terminal": "T2"
+        },
+        {
+          "prefixes": [
+            "E",
+            "F"
+          ],
+          "terminal": "cargo"
+        },
+        {
+          "prefixes": [
+            "U"
+          ],
+          "terminal": "maintenance"
+        },
+        {
+          "prefixes": [
+            "V"
+          ],
+          "terminal": "GA/cargo"
+        },
+        {
+          "prefixes": [
+            "W"
+          ],
+          "terminal": "cargo"
+        }
+      ],
+      "airlines": {
+        "EWG": {
+          "name": "Eurowings",
+          "terminal": "T1/T2",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "RYR": {
+          "name": "Ryanair",
+          "terminal": "T1/T2",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "DLH": {
+          "name": "Lufthansa",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "AUA": {
+          "name": "Austrian Airlines",
+          "terminal": "T1",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "BAW": {
+          "name": "British Airways",
+          "terminal": "T2",
+          "allowedGates": [
+            "D15",
+            "D19",
+            "D23"
+          ]
+        },
+        "THY": {
+          "name": "Turkish Airlines",
+          "terminal": "T2",
+          "allowedGates": [
+            "D15",
+            "D19",
+            "D23"
+          ]
+        },
+        "MSR": {
+          "name": "EgyptAir",
+          "terminal": "T1/T2",
+          "allowedGates": [
+            "B11",
+            "B17",
+            "B21",
+            "C50"
+          ]
+        },
+        "CFG": {
+          "name": "Condor",
+          "terminal": "T1/T2",
+          "allowedPrefixes": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "specialGates": [
+        {
+          "gates": [
+            "B11",
+            "B17",
+            "B21"
+          ],
+          "airlines": [
+            "MSR"
+          ]
+        },
+        {
+          "gates": [
+            "C50"
+          ],
+          "airlines": [
+            "DLH",
+            "MSR"
+          ]
+        },
+        {
+          "gates": [
+            "D15",
+            "D19",
+            "D23"
+          ],
+          "airlines": [
+            "BAW",
+            "THY"
+          ]
+        }
+      ]
+    }
+  }
+}

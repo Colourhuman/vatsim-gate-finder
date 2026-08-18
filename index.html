@@ -113,7 +113,7 @@ button.searchBtn:disabled{opacity:.65;cursor:wait;transform:none}
       <h1>Gate Finder</h1>
       <p>Finde passende, aktuell freie Gates anhand von Airline, Aircraft und echter VATSIM-Live-Belegung.</p>
     </div>
-    <div class="version">FINAL</div>
+    <div class="version">v10 · LIVE</div>
   </header>
 
   <section class="search">
@@ -135,8 +135,8 @@ button.searchBtn:disabled{opacity:.65;cursor:wait;transform:none}
     <div class="info">
       <div class="left">
         <span class="pill">Live-Belegung: VATSIM</span>
-        <span class="pill">Gate-Daten: curated → OSM Fallback</span>
-        <span class="pill">Aircraft-Daten: automatisch aktualisiert</span>
+        <span class="pill">Gate-Daten: IFATC + OSM + Airport-Regeln</span>
+        <span class="pill">Aircraft-Daten: ICAO/IATA normalisiert</span>
       </div>
       <div id="status"></div>
     </div>
@@ -191,7 +191,7 @@ function renderSummary(data){
   const r=data.totals;
   $("summary").innerHTML=`
     <div class="summary">
-      <div class="summaryCard primary"><div class="label">${esc(data.icao)} · ${esc(data.dataSource)}</div><div class="value">${r.gates}</div><div class="label">${r.gates===1?"Gate":"Gates / Positionen"}</div></div>
+      <div class="summaryCard primary"><div class="label">${esc(data.icao)} · ${esc(data.source)}</div><div class="value">${r.gates}</div><div class="label">${r.gates===1?"Gate":"Gates / Positionen"}</div></div>
       <div class="summaryCard green"><div class="label">Verfügbar</div><div class="value">${r.available}</div><div class="label">passt zur Auswahl</div></div>
       <div class="summaryCard red"><div class="label">Belegt</div><div class="value">${r.occupied}</div><div class="label">${r.assignedAircraft} VATSIM-Zuordnungen</div></div>
       <div class="summaryCard amber"><div class="label">Nicht passend</div><div class="value">${r.incompatible}</div><div class="label">Airline / Aircraft</div></div>
@@ -233,9 +233,11 @@ function renderCards(){
       </div>
       ${badge}
       <div class="rows">
-        <div class="row"><b>Gate-Airline:</b> ${airline}</div>
+        <div class="row"><b>Terminal:</b> ${esc(g.terminal||"nicht hinterlegt")}</div>
+        <div class="row"><b>Airline-Regel:</b> ${airline}</div>
         <div class="row"><b>Gate-Größe:</b> ${size}</div>
         <div class="row"><b>Deine Auswahl:</b> ${esc(aircraftLabel(g))}</div>
+        <div class="row"><b>Match:</b> Airline ${g.compatibility?.airline?"✓":"✕"} · Terminal ${g.compatibility?.terminal?"✓":"✕"} · Aircraft ${g.compatibility?.aircraft?"✓":"✕"}</div>
       </div>
       ${occ}
     </article>`;
@@ -284,7 +286,8 @@ async function searchGates(){
     const ac=data.requestedAircraft;
     $("selectedInfo").innerHTML=
       `<span class="pill">${esc(a?.name||"Alle Airlines")}${a?.icao?` (${esc(a.icao)})`:""}</span>`+
-      `<span class="pill">${esc(ac?.name||"Alle Aircraft")}${ac?.icao?` (${esc(ac.icao)})`:""}</span>`;
+      `<span class="pill">${esc(ac?.name||"Alle Aircraft")}${ac?.icao?` (${esc(ac.icao)})`:""}</span>`+
+      `<span class="pill">${esc(data.airport?.name||data.icao)}</span>`;
 
     const stamp=data.vatsimUpdatedAt?new Date(data.vatsimUpdatedAt).toLocaleTimeString("de-DE"):"—";
     $("status").innerText=`VATSIM: ${stamp} · ${data.gates.length} Positionen · ${data.debug?.assignedAircraft||0} belegt`;
