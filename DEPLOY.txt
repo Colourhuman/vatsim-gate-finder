@@ -1,25 +1,2 @@
-VATSIM Gate Finder v12
-
-Render
-------
-Build: npm install
-Start: npm start
-
-No gates.json is required.
-
-Files
------
-- server.js
-- index.html
-- airport-rules.json
-- package.json
-- README.md
-
-Useful tests after deployment
------------------------------
-GET /api/health
-GET /api/airlines
-GET /api/gates?icao=EDDF&airline=CFG&aircraft=A320
-GET /api/gates?icao=EDDK&airline=EWG&aircraft=A320
-
-The debug object is intentionally included in /api/gates so incorrect live assignments can be diagnosed without guessing.
+VATSIM Gate Finder v13
+Deploy as a normal Node/Express app. Start command: node server.js
