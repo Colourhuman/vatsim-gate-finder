@@ -1,2 +1,5 @@
-Render start command: node server.js
-No airport-rules.json is required.
+V15
+1. Replace the repository files with this ZIP.
+2. npm install
+3. npm start
+4. airport-rules.json is not used and can be deleted.

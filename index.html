@@ -12,8 +12,7 @@
 .search,.card,.summaryCard,.empty{background:rgba(13,21,34,.9);border:1px solid var(--line);border-radius:16px}
 .search{padding:15px}.form{display:grid;grid-template-columns:1fr 1fr auto;gap:10px}
 label{display:block;color:var(--muted);font-size:10px;font-weight:900;text-transform:uppercase;margin-bottom:6px}
-input{width:100%;padding:13px;border-radius:11px;border:1px solid #29405d;background:#080f1b;color:#fff;outline:0}
-.darkControl{height:46px;font-size:14px}.field{position:relative}.suggest{position:absolute;z-index:30;left:0;right:0;top:70px;background:#0b1422;border:1px solid #29405d;border-radius:11px;overflow:auto;max-height:250px;display:none;box-shadow:0 16px 40px rgba(0,0,0,.45)}.suggest.open{display:block}.suggest button{display:block;width:100%;text-align:left;background:transparent;color:#fff;border:0;border-radius:0;padding:10px 12px;cursor:pointer}.suggest button:hover{background:#15263c}.suggest small{color:#91a2b8;margin-left:6px}
+input{width:100%;padding:13px;border-radius:11px;border:1px solid #29405d;background:#080f1b;color:#fff;outline:0;font:inherit}.combo{position:relative}.menu{display:none;position:absolute;z-index:50;left:0;right:0;top:62px;background:#080f1b;border:1px solid #29405d;border-radius:11px;box-shadow:0 18px 45px rgba(0,0,0,.45);max-height:260px;overflow:auto;padding:5px}.menu.open{display:block}.menu button{display:flex;width:100%;justify-content:space-between;align-items:center;background:transparent;color:#f5f7fb;border:0;border-radius:8px;padding:9px 10px;font-size:12px;text-align:left}.menu button:hover{background:#122238}.menu small{color:#91a2b8}
 button{border:0;border-radius:11px;padding:13px 18px;font-weight:900;background:#147ec4;color:white;cursor:pointer}
 button:disabled{opacity:.6}.info{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;color:var(--muted);font-size:11px}.pill{border:1px solid var(--line);padding:6px 9px;border-radius:999px}
 .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.summaryCard{padding:14px}.summaryCard .n{font-size:28px;font-weight:950}.summaryCard .l{font-size:10px;color:var(--muted);text-transform:uppercase}
@@ -32,16 +31,11 @@ button:disabled{opacity:.6}.info{display:flex;gap:8px;flex-wrap:wrap;margin-top:
 <p>Zeigt echte Parkpositionen aus OpenStreetMap und deren aktuelle Belegung aus dem VATSIM-Livefeed. Es werden keine erfundenen Airline- oder Gate-Zuordnungen verwendet.</p></header>
 <section class="search"><div class="form">
 <div><label>Airport ICAO</label><input id="icao" maxlength="4" placeholder="EDDK"></div>
-<div class="field"><label>Airline</label><input id="airline" class="darkControl" placeholder="z. B. Eurowings" autocomplete="off"><div id="airlineSuggest" class="suggest"></div></div>
-<div class="field"><label>Aircraft</label><input id="aircraft" class="darkControl" placeholder="z. B. A320" autocomplete="off"><div id="aircraftSuggest" class="suggest"></div></div><!--
-<option value="A319">A319</option><option value="A320">A320</option><option value="A20N">A320neo</option><option value="A321">A321</option><option value="A21N">A321neo</option>
-<option value="B738">737-800</option><option value="B38M">737 MAX 8</option><option value="E190">E190</option><option value="E195">E195</option>
-<option value="CRJ9">CRJ900</option><option value="DH8D">Dash 8-400</option><option value="B752">757-200</option><option value="A333">A330-300</option>
-<option value="A359">A350-900</option><option value="B77W">777-300ER</option><option value="B789">787-9</option><option value="B748">747-8</option><option value="A388">A380</option>
-</div>
+<div class="combo"><label>Airline</label><input id="airline" autocomplete="off" placeholder="z. B. EWG / Eurowings"><div id="airlineMenu" class="menu"></div></div>
+<div class="combo"><label>Aircraft</label><input id="aircraft" autocomplete="off" placeholder="z. B. A320 / A20N"><div id="aircraftMenu" class="menu"></div></div>
 <button id="go">Gates suchen</button>
 </div>
-<div class="info"><span class="pill">Positionen: OSM</span><span class="pill">Belegung: VATSIM</span><span class="pill">Airline: nur bei Quelldaten berücksichtigt</span><span class="pill">Größe: nur aus Quelldaten</span><span id="status"></span></div></section>
+<div class="info"><span class="pill">Positionen: OSM</span><span class="pill">Belegung: VATSIM</span><span class="pill">Airline: verifiziert oder unbekannt</span><span class="pill">Größe: verifiziert oder unbekannt</span><span id="status"></span></div></section>
 <section id="summary"></section>
 <div class="toolbar"><div class="tabs">
 <button class="tab active" data-filter="all">Alle</button><button class="tab" data-filter="available">Frei</button><button class="tab" data-filter="occupied">Belegt</button>
@@ -61,30 +55,27 @@ function render(){
  const selected=$("airline").value;
  $("results").innerHTML='<div class="grid">'+list.map(g=>{
   const o=g.occupant;
-  let airlineText=g.airlineTags?esc(g.airlineTags):"nicht in den Quelldaten angegeben";
+  let airlineText=g.airlineTags?esc(g.airlineTags):"unbekannt";
   let airlineState=selected&&g.airlineMatch===true?" · Airline-Match":selected&&g.airlineMatch===false?" · Airline nicht bestätigt":"";
   return `<article class="card ${g.occupied?"occupied":"available"}"><div class="top"><div class="name">${esc(g.ref)}</div><span class="status ${g.occupied?"busy":"free"}">${g.occupied?"BELEGT":"FREI"}</span></div>
-  <div class="rows"><div class="row"><b>Standgröße:</b> ${esc(g.sizeLabel)}</div>
+  <div class="rows"><div class="row"><b>Größe:</b> ${esc(g.sizeLabel)}${g.aircraftMatch===true?" · Aircraft passt":g.aircraftMatch===false?" · Aircraft zu groß":" · nicht verifiziert"}</div>
   <div class="row"><b>Airline-Daten:</b> ${airlineText}${esc(airlineState)}</div>
   <div class="row"><b>Quelle:</b> OpenStreetMap · Parkposition</div>
   ${o?`<div class="occupant"><div class="call">${esc(o.callsign)}</div><div class="row"><b>Aircraft:</b> ${esc(o.aircraft.icao)}</div><div class="row"><b>Entfernung:</b> ${esc(o.distanceM)} m</div><div class="row"><b>Speed:</b> ${esc(o.groundspeed)} kt</div></div>`:""}
   </div></article>`
  }).join("")+'</div>'
 }
-const AIRCRAFT=[["A318","Airbus A318"],["A319","Airbus A319"],["A320","Airbus A320"],["A20N","Airbus A320neo"],["A321","Airbus A321"],["A21N","Airbus A321neo"],["B738","Boeing 737-800"],["B38M","Boeing 737 MAX 8"],["E190","Embraer E190"],["E195","Embraer E195"],["CRJ9","CRJ900"],["DH8D","Dash 8-400"],["B752","Boeing 757-200"],["A333","Airbus A330-300"],["A359","Airbus A350-900"],["B77W","Boeing 777-300ER"],["B789","Boeing 787-9"],["B748","Boeing 747-8"],["A388","Airbus A380"]];
-let airlines=[];
-function autocomplete(input,box,items,onPick){const draw=()=>{const q=input.value.trim().toLowerCase(),m=items.filter(x=>(x[0]+" "+x[1]).toLowerCase().includes(q)).slice(0,30);box.innerHTML=m.map(x=>`<button type="button" data-v="${esc(x[0])}">${esc(x[1])}<small>${esc(x[0])}</small></button>`).join("");box.classList.toggle("open",m.length>0);box.querySelectorAll("button").forEach(b=>b.onclick=()=>{onPick(b.dataset.v);box.classList.remove("open")})};input.addEventListener("focus",draw);input.addEventListener("input",draw);document.addEventListener("click",e=>{if(!input.parentElement.contains(e.target))box.classList.remove("open")})}
-autocomplete($("aircraft"),$("aircraftSuggest"),AIRCRAFT,v=>$("aircraft").value=v);
-async function loadAirlines(){try{const r=await fetch("/api/airlines",{cache:"no-store"}),d=await r.json();airlines=d.airlines||[];autocomplete($("airline"),$("airlineSuggest"),airlines.map(a=>[a.icao,a.name]),v=>$("airline").value=v)}catch{}}
-
+let airlineOptions=[], aircraftOptions=[["A318","A318"],["A319","A319"],["A320","A320"],["A20N","A320neo"],["A321","A321"],["A21N","A321neo"],["B737","737 family"],["B738","737-800"],["B38M","737 MAX 8"],["B39M","737 MAX 9"],["E170","E170"],["E175","E175"],["E190","E190"],["E195","E195"],["E290","E190-E2"],["E295","E195-E2"],["CRJ7","CRJ700"],["CRJ9","CRJ900"],["CRJX","CRJ family"],["DH8D","Dash 8-400"],["AT72","ATR 72"],["B752","757-200"],["B753","757-300"],["A332","A330-200"],["A333","A330-300"],["A339","A330-900"],["A359","A350-900"],["A35K","A350-1000"],["B772","777-200"],["B77W","777-300ER"],["B788","787-8"],["B789","787-9"],["B78X","787-10"],["B744","747-400"],["B748","747-8"],["A388","A380"]];
+function setupCombo(inputId,menuId,items,emptyLabel){const input=$(inputId),menu=$(menuId);function draw(){const q=input.value.trim().toUpperCase(),list=items.filter(x=>!q||x[0].toUpperCase().includes(q)||x[1].toUpperCase().includes(q)).slice(0,40);menu.innerHTML=`<button type="button" data-v="">${esc(emptyLabel)}<small>⌫</small></button>`+list.map(x=>`<button type="button" data-v="${esc(x[0])}"><span>${esc(x[1])}</span><small>${esc(x[0])}</small></button>`).join("");menu.classList.add("open");menu.querySelectorAll("button").forEach(b=>b.onclick=()=>{input.value=b.dataset.v;menu.classList.remove("open")})}input.addEventListener("focus",draw);input.addEventListener("input",draw);document.addEventListener("click",e=>{if(!input.parentElement.contains(e.target))menu.classList.remove("open")})}
+async function loadAirlines(){try{const r=await fetch("/api/airlines",{cache:"no-store"}),d=await r.json();airlineOptions=[["","Alle Airlines"],...(d.airlines||[]).map(a=>[a.icao,a.name])]}catch{airlineOptions=[["","Alle Airlines"]]}setupCombo("airline","airlineMenu",airlineOptions,"Alle Airlines");setupCombo("aircraft","aircraftMenu",aircraftOptions,"Alle Aircraft")}
 async function search(){
- const icao=$("icao").value.trim().toUpperCase(),airline=$("airline").value.trim(),aircraft=$("aircraft").value.trim();
+ const icao=$("icao").value.trim().toUpperCase(),airline=$("airline").value,aircraft=$("aircraft").value;
  if(!/^[A-Z0-9]{4}$/.test(icao)){ $("status").textContent="Ungültiger ICAO-Code";return }
  $("go").disabled=true;$("status").textContent="Lade Parkpositionen + VATSIM…";$("summary").innerHTML="";$("results").innerHTML='<div class="empty">Lade…</div>';
  try{
   const q=new URLSearchParams({icao});if(airline)q.set("airline",airline);if(aircraft)q.set("aircraft",aircraft);
   const r=await fetch("/api/gates?"+q,{cache:"no-store"}),d=await r.json();if(!r.ok)throw new Error(d.error+" "+(d.details||""));
-  gates=d.gates||[];filter="all";document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.filter==="all"));
+  gates=(d.gates||[]).sort((a,b)=>{const av=a.aircraftMatch===true?0:a.aircraftMatch===null?1:2,bv=b.aircraftMatch===true?0:b.aircraftMatch===null?1:2;return av-bv});filter="all";document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.filter==="all"));
   renderSummary(d);$("selection").innerHTML=`<span class="pill">${esc(airline||"Airline nicht ausgewählt")} · ${esc(aircraft||"Aircraft nicht ausgewählt")}</span>`;
   $("status").textContent=`VATSIM: ${d.debug.assignedAircraft} belegte Parkpositionen erkannt · Größenangaben: ${d.debug.sizeTaggedGates}/${d.totals.gates} aus Quelldaten`;
   render();

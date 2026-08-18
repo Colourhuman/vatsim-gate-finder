@@ -7,9 +7,7 @@ app.use(express.json());
 const VATSIM_URL="https://data.vatsim.net/v3/vatsim-data.json";
 const NOMINATIM_URL=icao=>`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=&q=${encodeURIComponent(icao+" airport")}`;
 const OSM_MAP_URL="https://api.openstreetmap.org/api/0.6/map";
-const IFATC_URL=icao=>`https://www.ifatc.org/gates?code=${encodeURIComponent(icao)}`;
-const IFATC_TTL=24*60*60*1000;
-const ifatcCache=new Map();
+const VATSIM_USER_AGENT="VATSIM-Gate-Finder/15.0";
 
 const VATSIM_TTL=10_000;
 const AIRPORT_TTL=24*60*60*1000;
@@ -51,26 +49,8 @@ const AIRLINES = {
   UAL:"United Airlines",AAL:"American Airlines",VIR:"Virgin Atlantic",
   IBE:"Iberia",VLG:"Vueling",IBB:"IBERIA Express",TAR:"TAROM",BEL:"Brussels Airlines",
   SWU:"Air Europa",TVS:"Smartwings",TRA:"Transavia",NAX:"Norwegian",
-  SAS:"SAS Scandinavian Airlines",AZA:"ITA Airways",ITY:"ITA Airways"
+  SAS:"SAS Scandinavian Airlines",AZA:"ITA Airways",ITY:"ITA Airways",DLH2:"Lufthansa",EIN:"Aer Lingus",LOG:"Loganair",MEA:"Middle East Airlines",ELY:"EL AL",ETD:"Etihad Airways",ETH:"Ethiopian Airlines",KAC:"Kuwait Airways",MSR:"EgyptAir",ROT:"TAROM",AEE:"Aegean Airlines",VIE:"Volotea"
 };
-const AIRPORT_RULES={
- EDDK:{A:["DLH","AUA","SWR","LOT","TAP","SAS","FIN","THY","ACA","UAL","EWG"],B:["DLH","AUA","SWR","LOT","TAP","SAS","FIN","THY","ACA","UAL","EWG"],C:["DLH","AUA","SWR","LOT","TAP","SAS","FIN","THY","ACA","UAL","EWG"],D:"NON_STAR",E:["FDX","GEC","DAN","UPS"],F:["FDX","GEC","DAN","UPS"],W:["FDX","GEC","DAN","UPS"]},
- EDDF:{A:["DLH","AUA","TAP","AEE","SWR","UAL"],B:"STAR_NON_SCHENGEN",C:"STAR_NON_SCHENGEN",D:"T2_NON_STAR",E:"T2_NON_STAR",F:"MIXED",J:["CAL","CES","CPA","CSN","ETD","GFA","KAC","KAL","OMA","QTR","SVA","TWB","UAE"]},
- EDDL:{A:["DLH","AUA","SWR","LOT","TAP","SAS","FIN","THY","ACA","UAL"],B:"SCHENGEN",C:"NON_SCHENGEN"}
-};
-const STAR_ALLIANCE=new Set(["DLH","AUA","SWR","LOT","TAP","SAS","FIN","THY","ACA","UAL","SIA","ANA","THA","ETH","AEE","CCA"]);
-function verifiedAirlineRule(icao,ref,selected){
- if(!selected)return {state:"unknown",label:"Airline nicht ausgewählt"};
- const rules=AIRPORT_RULES[icao];if(!rules)return {state:"unknown",label:"Keine verifizierte Airline-Regel"};
- const area=(String(ref||"").match(/^[A-Z]+/i)||[""])[0].toUpperCase(),rule=rules[area];
- if(!rule)return {state:"unknown",label:"Für diesen Stand keine verifizierte Airline-Regel"};
- if(Array.isArray(rule))return rule.includes(selected)?{state:"match",label:"typische Nutzung bestätigt"}:{state:"mismatch",label:"nicht in dieser Airline-Gruppe"};
- if(rule==="NON_STAR")return STAR_ALLIANCE.has(selected)?{state:"mismatch",label:"Terminal 2: Non-Star"}:{state:"match",label:"Terminal 2: Non-Star"};
- if(rule==="T2_NON_STAR")return STAR_ALLIANCE.has(selected)?{state:"mismatch",label:"Terminal 2: überwiegend Non-Star"}:{state:"match",label:"Terminal 2: überwiegend Non-Star"};
- if(rule==="STAR_NON_SCHENGEN")return STAR_ALLIANCE.has(selected)?{state:"match",label:"Star Alliance / Non-Schengen"}:{state:"unknown",label:"Schengen-Status fehlt"};
- if(rule==="SCHENGEN"||rule==="NON_SCHENGEN")return {state:"unknown",label:"Schengen-Status des Fluges fehlt"};
- return {state:"unknown",label:"gemischte/nicht verifizierte Nutzung"};
-}
 function normalizeAirline(v){
   const raw=String(v||"").trim().toUpperCase();
   if(!raw)return "";
@@ -97,27 +77,16 @@ function airlineMatches(tags, selected){
   return wanted.some(x=>raw.split(/[;,|/\\s]+/).includes(x)) ||
          wanted.some(x=>raw.includes(x));
 }
-function extractGateRef(name){const m=String(name||"").trim().match(/(?:^|[\\s-])([A-Z]{0,2}\\d+[A-Z]{0,2})$/i);return m?m[1].toUpperCase():null;}
-function parseIfatc(html){
- const rows=html.match(/<tr[\s\S]*?<\/tr>/gi)||[],map=new Map();
- for(const row of rows){
-  const cells=(row.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi)||[]).map(cleanHtml);
-  if(cells.length<3)continue;const cls=String(cells[cells.length-1]).trim().toUpperCase(),ref=extractGateRef(cells[0]);
-  if(!/^[ABCDEF]$/.test(cls)||!ref)continue;map.set(normalizeRef(ref),{ifatcClass:cls,ifatcName:cells[0]});
- }
- return map;
-}
-async function loadIfatc(icao){
- const c=ifatcCache.get(icao);if(c&&Date.now()-c.at<IFATC_TTL)return c.data;
- const r=await fetch(IFATC_URL(icao),{headers:{"User-Agent":"VATSIM-Gate-Finder/15.0","Accept":"text/html"}});
- if(!r.ok)throw new Error(`IFATC HTTP ${r.status}`);const data=parseIfatc(await r.text());ifatcCache.set(icao,{at:Date.now(),data});return data;
-}
-const CLASS_DESC={A:"Code A · <15 m",B:"Code B · <24 m",C:"Code C · max. ca. 36 m",D:"Code D · max. ca. 52 m",E:"Code E · max. ca. 65 m",F:"Code F · max. ca. 80 m"};
 function sizeLabel(g){
- if(g.ifatcClass)return CLASS_DESC[g.ifatcClass]||`Code ${g.ifatcClass}`;
- if(g.size)return `ICAO Reference Code ${g.size}`;
- if(Number.isFinite(g.maxWingspan))return `max. Spannweite ${g.maxWingspan} m`;
- return "Größe nicht verifiziert";
+  if(g.size)return `ICAO Code ${g.size}`;
+  if(Number.isFinite(g.maxWingspan))return `max. Spannweite ${g.maxWingspan} m`;
+  return "unbekannt";
+}
+function aircraftFitsGate(g, ac){
+  if(!ac?.span)return null;
+  if(Number.isFinite(g.maxWingspan))return ac.span<=g.maxWingspan+0.5;
+  if(g.size){const limits={A:15,B:24,C:36,D:52,E:65,F:80};return ac.span<=limits[g.size]+0.5;}
+  return null;
 }
 
 function normalizeAircraft(v){
@@ -189,7 +158,7 @@ function tileBboxes(b){
 async function airportBounds(icao){
  const c=airportCache.get(icao);
  if(c&&Date.now()-c.at<AIRPORT_TTL)return c.data;
- const r=await fetch(NOMINATIM_URL(icao),{headers:{"User-Agent":"VATSIM-Gate-Finder/15.0"}});
+ const r=await fetch(NOMINATIM_URL(icao),{headers:{"User-Agent":VATSIM_USER_AGENT}});
  if(!r.ok)throw new Error(`Airport lookup HTTP ${r.status}`);
  const rs=await r.json();
  const e=rs.find(x=>x.boundingbox && (/aerodrome|airport/i.test(x.type||"")||/aeroway/i.test(x.class||"")))||rs.find(x=>x.boundingbox);
@@ -203,7 +172,7 @@ async function osmTile(bb){
  const c=osmCache.get(key);if(c&&Date.now()-c.at<OSM_TTL)return c.data;
  const [w,s,e,n]=bb,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),7000);
  try{
-  const r=await fetch(`${OSM_MAP_URL}?bbox=${w},${s},${e},${n}`,{headers:{"User-Agent":"VATSIM-Gate-Finder/15.0","Accept":"application/xml"},signal:controller.signal});
+  const r=await fetch(`${OSM_MAP_URL}?bbox=${w},${s},${e},${n}`,{headers:{"User-Agent":VATSIM_USER_AGENT,"Accept":"application/xml"},signal:controller.signal});
   if(!r.ok)throw new Error(`OSM HTTP ${r.status}`);
   const data=parseOsm(await r.text());osmCache.set(key,{at:Date.now(),data});return data;
  }finally{clearTimeout(timer);}
@@ -226,7 +195,7 @@ async function loadPositions(icao){
 }
 async function vatsim(){
  if(Date.now()-vatsimCache.at<VATSIM_TTL)return vatsimCache.pilots;
- const r=await fetch(VATSIM_URL,{headers:{"User-Agent":"VATSIM-Gate-Finder/15.0"}});
+ const r=await fetch(VATSIM_URL,{headers:{"User-Agent":VATSIM_USER_AGENT}});
  if(!r.ok)throw new Error(`VATSIM HTTP ${r.status}`);
  const d=await r.json();vatsimCache={at:Date.now(),pilots:Array.isArray(d.pilots)?d.pilots:[]};return vatsimCache.pilots;
 }
@@ -241,7 +210,6 @@ function occRadius(p){
  if(gs<=20)return 30;
  return 18;
 }
-function aircraftFitsClass(span,cls){const max={A:15,B:24,C:36,D:52,E:65,F:80}[cls];return Number.isFinite(span)&&max?span<=max:null;}
 function occupancy(gates,pilots,b){
  const candidates=[];
  for(const p of pilots){
@@ -275,20 +243,39 @@ const gateCache=new Map();
 app.get("/api/airlines",(req,res)=>res.json({airlines:Object.entries(AIRLINES).map(([icao,name])=>({icao,name}))}));
 app.get("/api/health",(q,res)=>res.json({ok:true,version:"15.0",vatsimFeedAgeSeconds:vatsimCache.at?Math.round((Date.now()-vatsimCache.at)/1000):null}));
 app.get("/api/gates",async(req,res)=>{
- const icao=String(req.query.icao||"").trim().toUpperCase(),airline=normalizeAirline(req.query.airline||""),aircraftInput=String(req.query.aircraft||"").trim();
+ const icao=String(req.query.icao||"").trim().toUpperCase();
+ const airline=normalizeAirline(req.query.airline||"");
+ const aircraftInput=String(req.query.aircraft||"").trim();
  if(!/^[A-Z0-9]{4}$/.test(icao))return res.status(400).json({error:"Bitte einen gültigen 4-stelligen ICAO-Code eingeben."});
  try{
-  let data=gateCache.get(icao);if(!data||Date.now()-data.at>OSM_TTL){data=await loadPositions(icao);data.at=Date.now();gateCache.set(icao,data);}
-  let sizeMap=new Map();try{sizeMap=await loadIfatc(icao)}catch(e){console.warn("IFATC size enrichment:",e.message)}
-  const enriched=data.positions.map(g=>({...g,...(sizeMap.get(normalizeRef(g.ref))||{})}));
-  const pilots=await vatsim().catch(()=>[]),occ=occupancy(enriched,pilots,data.bounds),map=new Map(occ.map(x=>[x.gateIndex,x])),requestedAircraft=normalizeAircraft(aircraftInput);
-  const gates=enriched.map((g,i)=>{const o=map.get(i)||null,rule=verifiedAirlineRule(icao,g.ref,airline);return {...g,occupied:!!o,status:o?"occupied":"available",occupant:o,airlineMatch:rule.state,airlineRuleLabel:rule.label,aircraftMatch:requestedAircraft.span&&g.ifatcClass?aircraftFitsClass(requestedAircraft.span,g.ifatcClass):null,sizeLabel:sizeLabel(g)};});
-  res.json({version:"15.0",icao,source:"OSM parking positions + IFATC exact-reference size class + VATSIM live data",airlines:Object.entries(AIRLINES).map(([icao,name])=>({icao,name})),requestedAirline:airline||null,requestedAircraft:aircraftInput||null,aircraftInfo:requestedAircraft,bounds:data.bounds,totals:{gates:gates.length,available:gates.filter(x=>!x.occupied).length,occupied:occ.length},vatsimUpdatedAt:vatsimCache.at?new Date(vatsimCache.at).toISOString():null,debug:{aircraftInsideAirport:pilots.filter(p=>inside(p,data.bounds)).length,assignedAircraft:occ.length,sizeEnrichedGates:gates.filter(g=>g.ifatcClass).length},gates});
+  let data=gateCache.get(icao);
+  if(!data||Date.now()-data.at>OSM_TTL){data=await loadPositions(icao);data.at=Date.now();gateCache.set(icao,data);}
+  const pilots=await vatsim().catch(()=>[]);
+  const occ=occupancy(data.positions,pilots,data.bounds),map=new Map(occ.map(x=>[x.gateIndex,x]));
+  const requestedAircraft=normalizeAircraft(aircraftInput);
+  const gates=data.positions.map((g,i)=>{
+    const o=map.get(i)||null;
+    const airlineMatch=airlineMatches(g.airlineTags,airline);
+    const aircraftMatch=aircraftFitsGate(g,requestedAircraft);
+    return {...g,occupied:!!o,status:o?"occupied":"available",occupant:o,
+      airlineMatch,aircraftMatch,sizeLabel:sizeLabel(g)};
+  });
+  res.json({
+   version:"15.0",icao,source:"OpenStreetMap parking positions + VATSIM live data",
+   airlines:Object.entries(AIRLINES).map(([icao,name])=>({icao,name})),
+   requestedAirline:airline||null,requestedAircraft:aircraftInput||null,aircraftInfo:requestedAircraft,
+   bounds:data.bounds,
+   totals:{gates:gates.length,available:gates.filter(x=>!x.occupied).length,occupied:occ.length},
+   vatsimUpdatedAt:vatsimCache.at?new Date(vatsimCache.at).toISOString():null,
+   debug:{aircraftInsideAirport:pilots.filter(p=>inside(p,data.bounds)).length,assignedAircraft:occ.length,
+     airlineTaggedGates:gates.filter(g=>g.airlineTags).length,sizeTaggedGates:gates.filter(g=>g.size||g.maxWingspan).length},
+   gates
+  });
  }catch(e){console.error(e);res.status(502).json({error:"Gate-Daten konnten nicht geladen werden.",details:e.message});}
-});
+});;
 app.get("/api/refresh/:icao",(req,res)=>{
  const i=String(req.params.icao||"").toUpperCase();gateCache.delete(i);airportCache.delete(i);
  for(const k of osmCache.keys())osmCache.delete(k);
  res.json({ok:true,icao:i});
 });
-app.listen(PORT,"0.0.0.0",()=>console.log(`VATSIM Gate Finder v13 listening on ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`VATSIM Gate Finder v15 listening on ${PORT}`));
