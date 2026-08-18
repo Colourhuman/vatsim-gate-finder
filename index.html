@@ -12,7 +12,7 @@
 .search,.card,.summaryCard,.empty{background:rgba(13,21,34,.9);border:1px solid var(--line);border-radius:16px}
 .search{padding:15px}.form{display:grid;grid-template-columns:1fr 1fr auto;gap:10px}
 label{display:block;color:var(--muted);font-size:10px;font-weight:900;text-transform:uppercase;margin-bottom:6px}
-input{width:100%;padding:13px;border-radius:11px;border:1px solid #29405d;background:#080f1b;color:#fff;outline:0;font:inherit}.combo{position:relative}.menu{display:none;position:absolute;z-index:50;left:0;right:0;top:62px;background:#080f1b;border:1px solid #29405d;border-radius:11px;box-shadow:0 18px 45px rgba(0,0,0,.45);max-height:260px;overflow:auto;padding:5px}.menu.open{display:block}.menu button{display:flex;width:100%;justify-content:space-between;align-items:center;background:transparent;color:#f5f7fb;border:0;border-radius:8px;padding:9px 10px;font-size:12px;text-align:left}.menu button:hover{background:#122238}.menu small{color:#91a2b8}
+input{width:100%;padding:13px;border-radius:11px;border:1px solid #29405d;background:#080f1b;color:#fff;outline:0}
 button{border:0;border-radius:11px;padding:13px 18px;font-weight:900;background:#147ec4;color:white;cursor:pointer}
 button:disabled{opacity:.6}.info{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;color:var(--muted);font-size:11px}.pill{border:1px solid var(--line);padding:6px 9px;border-radius:999px}
 .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.summaryCard{padding:14px}.summaryCard .n{font-size:28px;font-weight:950}.summaryCard .l{font-size:10px;color:var(--muted);text-transform:uppercase}
@@ -31,11 +31,10 @@ button:disabled{opacity:.6}.info{display:flex;gap:8px;flex-wrap:wrap;margin-top:
 <p>Zeigt echte Parkpositionen aus OpenStreetMap und deren aktuelle Belegung aus dem VATSIM-Livefeed. Es werden keine erfundenen Airline- oder Gate-Zuordnungen verwendet.</p></header>
 <section class="search"><div class="form">
 <div><label>Airport ICAO</label><input id="icao" maxlength="4" placeholder="EDDK"></div>
-<div class="combo"><label>Airline</label><input id="airline" autocomplete="off" placeholder="z. B. EWG / Eurowings"><div id="airlineMenu" class="menu"></div></div>
-<div class="combo"><label>Aircraft</label><input id="aircraft" autocomplete="off" placeholder="z. B. A320 / A20N"><div id="aircraftMenu" class="menu"></div></div>
+<div><label>Aircraft (optional)</label><input id="aircraft" placeholder="A320 / A20N / B738"></div>
 <button id="go">Gates suchen</button>
 </div>
-<div class="info"><span class="pill">Positionen: OSM</span><span class="pill">Belegung: VATSIM</span><span class="pill">Airline: verifiziert oder unbekannt</span><span class="pill">Größe: verifiziert oder unbekannt</span><span id="status"></span></div></section>
+<div class="info"><span class="pill">Positionen: OSM</span><span class="pill">Belegung: VATSIM</span><span class="pill">Keine erfundenen Airlines</span><span class="pill">Keine erfundenen Größen</span><span id="status"></span></div></section>
 <section id="summary"></section>
 <div class="toolbar"><div class="tabs">
 <button class="tab active" data-filter="all">Alle</button><button class="tab" data-filter="available">Frei</button><button class="tab" data-filter="occupied">Belegt</button>
@@ -46,42 +45,37 @@ button:disabled{opacity:.6}.info{display:flex;gap:8px;flex-wrap:wrap;margin-top:
 const $=id=>document.getElementById(id),esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 let gates=[],filter="all";
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{filter=b.dataset.filter;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));render()});
-["icao"].forEach(id=>$(id).addEventListener("keydown",e=>{if(e.key==="Enter")search()}));
+["icao","aircraft"].forEach(id=>$(id).addEventListener("keydown",e=>{if(e.key==="Enter")search()}));
 $("go").onclick=search;
-function renderSummary(d){$("summary").innerHTML=`<div class="summary"><div class="summaryCard"><div class="n">${d.totals.gates}</div><div class="l">echte Parkpositionen</div></div><div class="summaryCard"><div class="n">${d.totals.available}</div><div class="l">frei</div></div><div class="summaryCard"><div class="n">${d.totals.occupied}</div><div class="l">VATSIM belegt</div></div></div>`}
+function renderSummary(d){$("summary").innerHTML=`<div class="summary">
+<div class="summaryCard"><div class="n">${d.totals.gates}</div><div class="l">echte Parkpositionen</div></div>
+<div class="summaryCard"><div class="n">${d.totals.available}</div><div class="l">aktuell frei</div></div>
+<div class="summaryCard"><div class="n">${d.totals.occupied}</div><div class="l">aktuell durch VATSIM belegt</div></div></div>`}
 function render(){
  const list=gates.filter(g=>filter==="all"||(filter==="occupied"?g.occupied:!g.occupied));
  if(!list.length){$("results").innerHTML='<div class="empty">Keine Positionen für diesen Filter.</div>';return}
- const selected=$("airline").value;
  $("results").innerHTML='<div class="grid">'+list.map(g=>{
   const o=g.occupant;
-  let airlineText=g.airlineTags?esc(g.airlineTags):"unbekannt";
-  let airlineState=selected&&g.airlineMatch===true?" · Airline-Match":selected&&g.airlineMatch===false?" · Airline nicht bestätigt":"";
   return `<article class="card ${g.occupied?"occupied":"available"}"><div class="top"><div class="name">${esc(g.ref)}</div><span class="status ${g.occupied?"busy":"free"}">${g.occupied?"BELEGT":"FREI"}</span></div>
-  <div class="rows"><div class="row"><b>Größe:</b> ${esc(g.sizeLabel)}${g.aircraftMatch===true?" · Aircraft passt":g.aircraftMatch===false?" · Aircraft zu groß":" · nicht verifiziert"}</div>
-  <div class="row"><b>Airline-Daten:</b> ${airlineText}${esc(airlineState)}</div>
-  <div class="row"><b>Quelle:</b> OpenStreetMap · Parkposition</div>
+  <div class="rows"><div class="row"><b>Quelle:</b> echte OSM-Parkposition</div>
+  <div class="row"><b>Größe:</b> ${esc(g.sizeLabel)}</div>
   ${o?`<div class="occupant"><div class="call">${esc(o.callsign)}</div><div class="row"><b>Aircraft:</b> ${esc(o.aircraft.icao)}</div><div class="row"><b>Entfernung:</b> ${esc(o.distanceM)} m</div><div class="row"><b>Speed:</b> ${esc(o.groundspeed)} kt</div></div>`:""}
   </div></article>`
  }).join("")+'</div>'
 }
-let airlineOptions=[], aircraftOptions=[["A318","A318"],["A319","A319"],["A320","A320"],["A20N","A320neo"],["A321","A321"],["A21N","A321neo"],["B737","737 family"],["B738","737-800"],["B38M","737 MAX 8"],["B39M","737 MAX 9"],["E170","E170"],["E175","E175"],["E190","E190"],["E195","E195"],["E290","E190-E2"],["E295","E195-E2"],["CRJ7","CRJ700"],["CRJ9","CRJ900"],["CRJX","CRJ family"],["DH8D","Dash 8-400"],["AT72","ATR 72"],["B752","757-200"],["B753","757-300"],["A332","A330-200"],["A333","A330-300"],["A339","A330-900"],["A359","A350-900"],["A35K","A350-1000"],["B772","777-200"],["B77W","777-300ER"],["B788","787-8"],["B789","787-9"],["B78X","787-10"],["B744","747-400"],["B748","747-8"],["A388","A380"]];
-function setupCombo(inputId,menuId,items,emptyLabel){const input=$(inputId),menu=$(menuId);function draw(){const q=input.value.trim().toUpperCase(),list=items.filter(x=>!q||x[0].toUpperCase().includes(q)||x[1].toUpperCase().includes(q)).slice(0,40);menu.innerHTML=`<button type="button" data-v="">${esc(emptyLabel)}<small>⌫</small></button>`+list.map(x=>`<button type="button" data-v="${esc(x[0])}"><span>${esc(x[1])}</span><small>${esc(x[0])}</small></button>`).join("");menu.classList.add("open");menu.querySelectorAll("button").forEach(b=>b.onclick=()=>{input.value=b.dataset.v;menu.classList.remove("open")})}input.addEventListener("focus",draw);input.addEventListener("input",draw);document.addEventListener("click",e=>{if(!input.parentElement.contains(e.target))menu.classList.remove("open")})}
-async function loadAirlines(){try{const r=await fetch("/api/airlines",{cache:"no-store"}),d=await r.json();airlineOptions=[["","Alle Airlines"],...(d.airlines||[]).map(a=>[a.icao,a.name])]}catch{airlineOptions=[["","Alle Airlines"]]}setupCombo("airline","airlineMenu",airlineOptions,"Alle Airlines");setupCombo("aircraft","aircraftMenu",aircraftOptions,"Alle Aircraft")}
 async function search(){
- const icao=$("icao").value.trim().toUpperCase(),airline=$("airline").value,aircraft=$("aircraft").value;
+ const icao=$("icao").value.trim().toUpperCase(),aircraft=$("aircraft").value.trim();
  if(!/^[A-Z0-9]{4}$/.test(icao)){ $("status").textContent="Ungültiger ICAO-Code";return }
- $("go").disabled=true;$("status").textContent="Lade Parkpositionen + VATSIM…";$("summary").innerHTML="";$("results").innerHTML='<div class="empty">Lade…</div>';
+ $("go").disabled=true;$("status").textContent="Lade echte Parkpositionen + VATSIM…";$("summary").innerHTML="";$("results").innerHTML='<div class="empty">Lade…</div>';
  try{
-  const q=new URLSearchParams({icao});if(airline)q.set("airline",airline);if(aircraft)q.set("aircraft",aircraft);
+  const q=new URLSearchParams({icao});if(aircraft)q.set("aircraft",aircraft);
   const r=await fetch("/api/gates?"+q,{cache:"no-store"}),d=await r.json();if(!r.ok)throw new Error(d.error+" "+(d.details||""));
-  gates=(d.gates||[]).sort((a,b)=>{const av=a.aircraftMatch===true?0:a.aircraftMatch===null?1:2,bv=b.aircraftMatch===true?0:b.aircraftMatch===null?1:2;return av-bv});filter="all";document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.filter==="all"));
-  renderSummary(d);$("selection").innerHTML=`<span class="pill">${esc(airline||"Airline nicht ausgewählt")} · ${esc(aircraft||"Aircraft nicht ausgewählt")}</span>`;
-  $("status").textContent=`VATSIM: ${d.debug.assignedAircraft} belegte Parkpositionen erkannt · Größenangaben: ${d.debug.sizeTaggedGates}/${d.totals.gates} aus Quelldaten`;
+  gates=d.gates||[];filter="all";document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.filter==="all"));
+  renderSummary(d);$("selection").innerHTML=`<span class="pill">${esc(aircraft||"Aircraft nicht angegeben")}</span>`;
+  $("status").textContent=`VATSIM Feed: ${d.vatsimUpdatedAt?new Date(d.vatsimUpdatedAt).toLocaleTimeString("de-DE"):"—"} · ${d.debug.assignedAircraft} Belegungen erkannt`;
   render();
  }catch(e){$("summary").innerHTML="";$("results").innerHTML=`<div class="empty">${esc(e.message)}</div>`;$("status").textContent=""}
  finally{$("go").disabled=false}
 }
-loadAirlines();
 </script>
 </body></html>

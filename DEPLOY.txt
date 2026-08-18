@@ -1,5 +1,2 @@
-V15
-1. Replace the repository files with this ZIP.
-2. npm install
-3. npm start
-4. airport-rules.json is not used and can be deleted.
+VATSIM Gate Finder v13
+Deploy as a normal Node/Express app. Start command: node server.js
