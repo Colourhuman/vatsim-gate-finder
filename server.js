@@ -199,7 +199,7 @@ async function loadPositions(icao){
  }
  const positions=mergeAirportPositions(unique,ifatcResults);
  positions.sort((a,b)=>String(a.ref).localeCompare(String(b.ref),undefined,{numeric:true}));
- return {bounds:b,positions,inventorySource:ifatcResults.length?"IFATC + OSM":"OSM only"};
+ return {bounds:{...b,icao},positions,inventorySource:ifatcResults.length?"IFATC + OSM":"OSM only"};
 }
 async function vatsim(){
  if(Date.now()-vatsimCache.at<VATSIM_TTL)return vatsimCache.pilots;
@@ -212,41 +212,75 @@ function inside(p,b){
  return Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=b.south&&lat<=b.north&&lon>=b.west&&lon<=b.east;
 }
 function occRadius(p){
- const gs=+p.groundspeed||0;
- if(gs<=2)return 80;
- if(gs<=8)return 55;
- if(gs<=20)return 30;
- return 18;
+ const gs=Number(p.groundspeed)||0;
+ // VATSIM positions are updated every ~15 seconds and are not guaranteed to
+ // sit exactly on the scenery stand coordinate. Give stationary aircraft a
+ // generous apron radius, but keep moving aircraft tighter to avoid false
+ // positives from taxiways/runways.
+ if(gs<=2)return 125;
+ if(gs<=5)return 95;
+ if(gs<=12)return 60;
+ if(gs<=25)return 35;
+ return 0;
 }
+function airportRelevantPilot(p,icao){
+ const fp=p.flight_plan||{};
+ const dep=String(fp.departure||'').trim().toUpperCase();
+ const arr=String(fp.arrival||'').trim().toUpperCase();
+ // A filed flight plan is a strong signal that a low-speed aircraft inside
+ // the airport belongs to this airport. Pilots without a flight plan are
+ // still supported when completely stationary (common when connecting at a
+ // gate before filing).
+ if(dep||arr)return dep===icao||arr===icao;
+ return (Number(p.groundspeed)||0)<=2;
+}
+
 function occupancy(gates,pilots,b){
  const candidates=[];
  for(const p of pilots){
   if(!inside(p,b))continue;
-  const lat=+p.latitude,lon=+p.longitude,r=occRadius(p);
-  let best=null;
+  const gs=Number(p.groundspeed)||0;
+  if(gs>25)continue; // aircraft travelling on taxiways/runways are not parked
+  const lat=Number(p.latitude),lon=Number(p.longitude);
+  if(!Number.isFinite(lat)||!Number.isFinite(lon))continue;
+  if(!airportRelevantPilot(p,b.icao))continue;
+
+  // Do not let an aircraft at a nearby taxiway occupy a stand. The radius is
+  // deliberately largest only at 0-2 kt, where VATSIM pilots are normally
+  // parked/connecting. For taxiing aircraft the radius shrinks rapidly.
+  const r=occRadius(p);
+  if(r<=0)continue;
+  const nearby=[];
   for(let i=0;i<gates.length;i++){
-   const g=gates[i];if(!Number.isFinite(g.lat)||!Number.isFinite(g.lon))continue;
-   const d=haversine(lat,lon,g.lat,g.lon);if(d>r)continue;
-   // For parked aircraft, distance is the only authoritative signal.
-   if(!best||d<best.d)best={i,d,r};
+   const g=gates[i];
+   if(!Number.isFinite(g.lat)||!Number.isFinite(g.lon))continue;
+   const d=haversine(lat,lon,g.lat,g.lon);
+   if(d<=r)nearby.push({i,d,r});
   }
-  if(best)candidates.push({p,...best});
+  if(!nearby.length)continue;
+  nearby.sort((a,c)=>a.d-c.d);
+  candidates.push({p,nearby});
  }
- // Global one-to-one assignment. Closest pair wins, so two aircraft cannot
- // make one stand appear twice and one aircraft cannot occupy two stands.
- candidates.sort((a,b)=>a.d-b.d);
+
+ // Resolve conflicts globally. First give aircraft with only one possible
+ // stand their stand, then assign the remaining aircraft by shortest distance.
+ candidates.sort((a,b)=>a.nearby.length-b.nearby.length || a.nearby[0].d-b.nearby[0].d);
  const usedP=new Set(),usedG=new Set(),out=[];
  for(const c of candidates){
   const id=String(c.p.cid||c.p.callsign);
-  if(usedP.has(id)||usedG.has(c.i))continue;
-  usedP.add(id);usedG.add(c.i);
-  const ac=normalizeAircraft(c.p.flight_plan?.aircraft_short||c.p.flight_plan?.aircraft||"");
-  out.push({gateIndex:c.i,callsign:c.p.callsign,cid:c.p.cid,aircraft:ac,
-   airline:String(c.p.callsign||"").slice(0,3).toUpperCase(),distanceM:Math.round(c.d),
-   radiusM:Math.round(c.r),groundspeed:+c.p.groundspeed||0,latitude:+c.p.latitude,longitude:+c.p.longitude});
+  if(usedP.has(id))continue;
+  const choice=c.nearby.find(x=>!usedG.has(x.i));
+  if(!choice)continue;
+  usedP.add(id);usedG.add(choice.i);
+  const ac=normalizeAircraft(c.p.flight_plan?.aircraft_short||c.p.flight_plan?.aircraft||'');
+  out.push({gateIndex:choice.i,callsign:c.p.callsign,cid:c.p.cid,aircraft:ac,
+   airline:String(c.p.callsign||'').slice(0,3).toUpperCase(),distanceM:Math.round(choice.d),
+   radiusM:Math.round(choice.r),groundspeed:gsValue(c.p),latitude:Number(c.p.latitude),longitude:Number(c.p.longitude)});
  }
  return out;
 }
+function gsValue(p){return Number(p.groundspeed)||0;}
+
 const gateCache=new Map();
 app.get("/api/health",(q,res)=>res.json({ok:true,version:"14.0",vatsimFeedAgeSeconds:vatsimCache.at?Math.round((Date.now()-vatsimCache.at)/1000):null}));
 app.get("/api/gates",async(req,res)=>{
@@ -284,4 +318,4 @@ app.get("/api/refresh/:icao",(req,res)=>{
  for(const k of osmCache.keys())osmCache.delete(k);
  res.json({ok:true,icao:i});
 });
-app.listen(PORT,"0.0.0.0",()=>console.log(`VATSIM Gate Finder v13 listening on ${PORT}`));
+app.listen(PORT,"0.0.0.0",()=>console.log(`VATSIM Gate Finder v14 listening on ${PORT}`));

@@ -1,2 +1,16 @@
-VATSIM Gate Finder v13
-Deploy as a normal Node/Express app. Start command: node server.js
+VATSIM Gate Finder v15 - occupancy fix
+
+This version uses the official VATSIM public data feed for live aircraft positions.
+The feed is refreshed by VATSIM about every 15 seconds.
+
+Occupancy logic:
+- parked/standing aircraft (0-2 kt): up to 125 m from stand coordinate
+- very slow aircraft (2-5 kt): up to 95 m
+- taxiing slowly (5-12 kt): up to 60 m
+- faster taxiing (12-25 kt): up to 35 m
+- >25 kt: never assigned to a parking position
+- filed flight plans must have this airport as departure or arrival
+- pilots without a flight plan are only considered when completely stationary
+- one aircraft can occupy only one stand and one stand can be occupied by one aircraft
+
+The official VATSIM feed contains latitude, longitude, altitude, groundspeed and flight-plan data.
