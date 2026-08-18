@@ -1,4 +1,4 @@
-# VATSIM Gate Finder v11
+# VATSIM Gate Finder v12
 
 This version fixes two major classes of problems:
 
