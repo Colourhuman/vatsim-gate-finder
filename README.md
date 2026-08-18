@@ -1,101 +1,69 @@
-# VATSIM Gate Finder v10
+# VATSIM Gate Finder v11
 
-## Was in v10 behoben wurde
+This version fixes two major classes of problems:
 
-### 1. Kein Fuzzy-Gate-Matching mehr
-Die alte Version konnte z. B. durch Suffix-Matching `D11` mit `11` oder einem
-anderen ähnlichen Stand verwechseln. v10 akzeptiert physische OSM-Anker nur noch
-bei einem **exakten Stand-Token**. Dadurch werden falsche Gate-Koordinaten nicht
-mehr aus Namensähnlichkeit erzeugt.
+1. **Airline rules were not actually connected to gate compatibility.**
+   The project now contains `airport-rules.json` with airline aliases and airport-specific terminal/apron rules. Gate cards show the airline assignment and the reason a gate is incompatible.
+2. **Live VATSIM aircraft could disappear or be assigned to the wrong stand.**
+   Occupancy now uses a stable one-to-one proposal algorithm instead of a simple greedy nearest-gate assignment. The search radius also accounts for the difference between a VATSIM aircraft reference position and an OSM parking-position anchor.
 
-Wenn ein IFATC-Gate keinen eindeutigen physischen OSM-Anker besitzt, bleibt es
-unverankert statt auf ein anderes Gate gesetzt zu werden.
+## Live data
 
-### 2. Ein physischer Stand = maximal ein Gate
-Wenn mehrere IFATC-Einträge auf denselben OSM-Parkpunkt zeigen, wird der
-Parkpunkt nicht mehr doppelt dargestellt.
+VATSIM's public Data API regenerates its live network feed every 15 seconds. The feed contains pilot coordinates, groundspeed, callsign and filed aircraft/route information. The server refreshes this feed every 10 seconds, so it normally sees the newest VATSIM snapshot within one feed interval. See https://vatsim.dev/api/data-api/get-network-data/.
 
-### 3. VATSIM-Belegung
-Die Belegung wird global als 1:1-Zuordnung berechnet:
-- ein VATSIM-Flugzeug kann nur ein Gate belegen
-- ein Gate kann nur von einem Flugzeug belegt werden
-- stehende Flugzeuge haben Priorität
-- schnell rollende Flugzeuge werden nur mit kleinerem Radius berücksichtigt
+## Airline rules
 
-Aktuelle Standardradien:
-- 0–2 kt: 35 m
-- 2–8 kt: 22 m
-- >8 kt: 13 m
+`airport-rules.json` contains:
 
-### 4. Airline-Regeln werden wirklich verwendet
-Die alte Version hat die eingegebene Airline praktisch nicht zur Gate-Auswahl
-verwendet. v10 normalisiert ICAO, IATA und Namen und wendet danach
-flughafenspezifische Regeln an.
+- airline ICAO/IATA/callsign aliases
+- airport-specific terminal/apron rules
+- gate/pier regexes
+- airline restrictions
+- labels displayed in the UI
 
-Beispiele:
-- `CFG`, `DE`, `Condor` → CFG
-- `EWG`, `EW`, `Eurowings` → EWG
-- `DLH`, `LH`, `Lufthansa` → DLH
+Current airport rule sets include: EDDF, EDDK, EDDL, EDDS, EDDM, EDDB, EGLL, EHAM and LFPG.
 
-### 5. Aircraft-Kompatibilität
-ICAO- und IATA-Aircraft-Codes werden normalisiert. Gate-Code und, falls OSM
-vorhanden, maximale Spannweite werden berücksichtigt.
+If an airport has no rule set, the tool does **not** invent an airline restriction. It still uses the live physical gate data and aircraft-size compatibility.
 
-### 6. Airport-Regeln
-`airport-rules.json` enthält getrennte Regeln für:
-- Terminal
-- Airline
-- Gate-/Standbereiche
-- Sonderstände
-- Aircraft-Größe
+## Frankfurt example
 
-Aktuell besonders berücksichtigt:
-- EDDK Köln/Bonn
-- EDDF Frankfurt/Main
+The EDDF rules deliberately do not mark Terminal 3 as universally valid for Condor. VATSIM Germany's current Frankfurt guidance lists a specific set of non-Star Alliance airlines for Pier J, while Condor is not in that list. See https://knowledgebase.vatsim-germany.org/books/airports-langen-fir-edgg/page/general and the EDDF apron guidance.
 
-Die Regeln sind bewusst in einer separaten JSON-Datei, damit weitere Airports
-ohne Änderung der Matching-Engine ergänzt werden können.
+## Occupancy
 
-## EDDF
+The aircraft-to-stand matching uses:
 
-Die Frankfurt-Regeln orientieren sich an der aktuellen VATSIM-Germany
-Knowledgebase:
-- A-Stands: überwiegend Lufthansa/Star Alliance
-- A50–A69: Lufthansa
-- B/C: Star Alliance / entsprechende Langstreckenbereiche
-- D/E: Terminal 2
-- J: Terminal 3, aktuelle Non-Schengen-Airlines
-- F/V: Remote-/Sonderbereiche
-- Condor: Terminal 1 / B-Bereich bis zum geplanten Umzug in T3 im Sommer 2027
+- parked aircraft: 85 m
+- slow aircraft: 55 m
+- taxiing aircraft: 32 m
 
-## EDDK
+These are configurable with `PARKED_RADIUS_M`, `SLOW_RADIUS_M` and `TAXI_RADIUS_M`.
 
-Die Regeln berücksichtigen:
-- Terminal 1: A/B/C
-- Terminal 2: D
-- Cargo: E/F/W
-- Maintenance: U
-- GA/Cargo: V
-- Sonderzuordnungen für BAW, THY, MSR und DLH
-- Eurowings/Ryanair können A–D nutzen, weil die reale Gate-Nutzung nicht
-  ausschließlich aus dem Check-in-Terminal abgeleitet werden darf.
+Every aircraft can occupy at most one stand and every stand can be occupied by at most one aircraft. If two aircraft compete for the same stand, the lower-cost assignment wins and the displaced aircraft tries its next-best stand.
 
-## Datenquellen
+## Endpoints
 
-- VATSIM live data
-- IFATC gate data
-- OpenStreetMap aeroway parking positions
-- Airport-spezifische Regeln in `airport-rules.json`
+- `GET /api/gates?icao=EDDF&airline=CFG&aircraft=A320`
+- `GET /api/airlines`
+- `GET /api/health`
+- `GET /api/refresh/EDDF`
 
-## Start
+The `/api/gates` response contains a `debug` section with:
 
-```bash
-npm install
-npm start
-```
+- aircraft inside the airport boundary
+- assigned aircraft
+- aircraft that were inside but could not be mapped to a stand
+- exact distance/radius for each assignment
+- failed OSM tiles
 
-Render:
-- Build command: `npm install`
-- Start command: `npm start`
+## Render
 
-Node.js >= 18.
+Build command:
+
+`npm install`
+
+Start command:
+
+`npm start`
+
+No `gates.json` is required.

@@ -113,7 +113,7 @@ button.searchBtn:disabled{opacity:.65;cursor:wait;transform:none}
       <h1>Gate Finder</h1>
       <p>Finde passende, aktuell freie Gates anhand von Airline, Aircraft und echter VATSIM-Live-Belegung.</p>
     </div>
-    <div class="version">v10 · LIVE</div>
+    <div class="version">FINAL</div>
   </header>
 
   <section class="search">
@@ -135,8 +135,8 @@ button.searchBtn:disabled{opacity:.65;cursor:wait;transform:none}
     <div class="info">
       <div class="left">
         <span class="pill">Live-Belegung: VATSIM</span>
-        <span class="pill">Gate-Daten: IFATC + OSM + Airport-Regeln</span>
-        <span class="pill">Aircraft-Daten: ICAO/IATA normalisiert</span>
+        <span class="pill">Airline-Regeln: Airport-Datenbank + VATSIM</span>
+        <span class="pill">Aircraft-Daten: automatisch aktualisiert</span>
       </div>
       <div id="status"></div>
     </div>
@@ -167,6 +167,7 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 let currentGates=[];
 let currentFilter="all";
+let dataAirlines={};
 
 document.querySelectorAll(".tab").forEach(btn=>{
   btn.addEventListener("click",()=>{
@@ -215,7 +216,7 @@ function renderCards(){
       ?'<span class="badge busy">BELEGT</span>'
       :'<span class="badge warn">NICHT PASSEND</span>';
 
-    const airline=g.gateAirlines?.length ? esc(g.gateAirlines.join(", ")) : "keine Einschränkung hinterlegt";
+    const airline=g.gateAirlines?.length ? esc(g.gateAirlines.map(x=>{const a=dataAirlines[x];return a?`${x} – ${a}`:x}).join(", ")) : "keine Einschränkung hinterlegt";
     const size=g.category ? `Code ${esc(g.category)}` : g.maxWingspanM ? `max. ${esc(g.maxWingspanM)} m` : "keine Größenangabe";
 
     const occ=g.occupant?`
@@ -233,11 +234,11 @@ function renderCards(){
       </div>
       ${badge}
       <div class="rows">
-        <div class="row"><b>Terminal:</b> ${esc(g.terminal||"nicht hinterlegt")}</div>
-        <div class="row"><b>Airline-Regel:</b> ${airline}</div>
+        <div class="row"><b>Gate-Airline:</b> ${airline}</div>
         <div class="row"><b>Gate-Größe:</b> ${size}</div>
+        ${g.ruleLabel?`<div class="row"><b>Zuordnung:</b> ${esc(g.ruleLabel)}</div>`:""}
+        ${g.reason?`<div class="row"><b>Hinweis:</b> ${esc(g.reason)}</div>`:""}
         <div class="row"><b>Deine Auswahl:</b> ${esc(aircraftLabel(g))}</div>
-        <div class="row"><b>Match:</b> Airline ${g.compatibility?.airline?"✓":"✕"} · Terminal ${g.compatibility?.terminal?"✓":"✕"} · Aircraft ${g.compatibility?.aircraft?"✓":"✕"}</div>
       </div>
       ${occ}
     </article>`;
@@ -280,6 +281,8 @@ async function searchGates(){
     currentFilter="all";
     document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.filter==="all"));
 
+    dataAirlines={};
+    (data.airlinesKnownAtAirport||[]).forEach(a=>{dataAirlines[a.icao]=a.name;});
     renderSummary(data);
 
     const a=data.requestedAirline;
@@ -287,7 +290,7 @@ async function searchGates(){
     $("selectedInfo").innerHTML=
       `<span class="pill">${esc(a?.name||"Alle Airlines")}${a?.icao?` (${esc(a.icao)})`:""}</span>`+
       `<span class="pill">${esc(ac?.name||"Alle Aircraft")}${ac?.icao?` (${esc(ac.icao)})`:""}</span>`+
-      `<span class="pill">${esc(data.airport?.name||data.icao)}</span>`;
+      `<span class="pill">${(data.airlinesKnownAtAirport||[]).length} Airlines aktuell im Airport-Bereich</span>`;
 
     const stamp=data.vatsimUpdatedAt?new Date(data.vatsimUpdatedAt).toLocaleTimeString("de-DE"):"—";
     $("status").innerText=`VATSIM: ${stamp} · ${data.gates.length} Positionen · ${data.debug?.assignedAircraft||0} belegt`;
