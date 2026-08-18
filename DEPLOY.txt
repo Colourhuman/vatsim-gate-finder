@@ -1,2 +1,2 @@
-VATSIM Gate Finder v14
-Deploy as a normal Node/Express app. Start command: node server.js
+Render start command: node server.js
+No airport-rules.json is required.
