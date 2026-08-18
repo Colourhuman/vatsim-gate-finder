@@ -1,4 +1,4 @@
-# VATSIM Gate Finder v13
+# VATSIM Gate Finder v14
 
 The tool deliberately uses only two authoritative layers:
 - OpenStreetMap `aeroway=parking_position` for physical stand positions.

@@ -39,6 +39,49 @@ const TYPE_MAP={
 "789":"B789","781":"B78X","744":"B744","74H":"B748","388":"A388","380":"A388"
 };
 
+const AIRLINES = {
+  EWG:"Eurowings",DLH:"Lufthansa",CFG:"Condor",RYR:"Ryanair",WZZ:"Wizz Air",
+  EZY:"easyJet",TUI:"TUI fly",AUA:"Austrian Airlines",SWR:"SWISS",KLM:"KLM",
+  AFR:"Air France",BAW:"British Airways",TAP:"TAP Air Portugal",SAS:"SAS",
+  LOT:"LOT Polish Airlines",FIN:"Finnair",UAE:"Emirates",QTR:"Qatar Airways",
+  SIA:"Singapore Airlines",THY:"Turkish Airlines",ACA:"Air Canada",DAL:"Delta Air Lines",
+  UAL:"United Airlines",AAL:"American Airlines",VIR:"Virgin Atlantic",
+  IBE:"Iberia",VLG:"Vueling",IBB:"IBERIA Express",TAR:"TAROM",BEL:"Brussels Airlines",
+  SWU:"Air Europa",TVS:"Smartwings",TRA:"Transavia",NAX:"Norwegian",
+  SAS:"SAS Scandinavian Airlines",AZA:"ITA Airways",ITY:"ITA Airways"
+};
+function normalizeAirline(v){
+  const raw=String(v||"").trim().toUpperCase();
+  if(!raw)return "";
+  if(AIRLINES[raw])return raw;
+  const hit=Object.entries(AIRLINES).find(([k,n])=>n.toUpperCase()===raw);
+  return hit?hit[0]:raw;
+}
+function airlineMatches(tags, selected){
+  if(!selected)return null;
+  const raw=String(tags||"").toUpperCase();
+  if(!raw)return null; // unknown, not false
+  const aliases={
+    EWG:["EWG","EW","EUROWINGS"],DLH:["DLH","LH","LUFTHANSA"],CFG:["CFG","DE","CONDOR"],
+    RYR:["RYR","FR","RYANAIR"],WZZ:["WZZ","W6","WIZZAIR"],EZY:["EZY","U2","EASYJET"],
+    TUI:["TUI","X3","TUIFLY"],AUA:["AUA","OS"],SWR:["SWR","LX"],KLM:["KLM","KL"],
+    AFR:["AFR","AF"],BAW:["BAW","BA"],TAP:["TAP","TP"],SAS:["SAS","SK"],
+    LOT:["LOT","LO"],FIN:["FIN","AY"],UAE:["UAE","EK"],QTR:["QTR","QR"],
+    SIA:["SIA","SQ"],THY:["THY","TK"],ACA:["ACA","AC"],DAL:["DAL","DL"],
+    UAL:["UAL","UA"],AAL:["AAL","AA"],VIR:["VIR","VS"],IBE:["IBE","IB"],
+    VLG:["VLG","VY"],BEL:["BEL","SN"],TRA:["TRA","HV"],NAX:["NAX","DY"],
+    AZA:["AZA","AZ"],ITY:["ITY","AZ"]
+  };
+  const wanted=aliases[selected]||[selected];
+  return wanted.some(x=>raw.split(/[;,|/\\s]+/).includes(x)) ||
+         wanted.some(x=>raw.includes(x));
+}
+function sizeLabel(g){
+  if(g.size)return `ICAO Reference Code ${g.size}`;
+  if(Number.isFinite(g.maxWingspan))return `max. Spannweite ${g.maxWingspan} m`;
+  return "nicht in den Quelldaten angegeben";
+}
+
 function normalizeAircraft(v){
  const raw=String(v||"").split("/")[0].trim().toUpperCase();
  const icao=TYPE_MAP[raw]||raw;
@@ -74,9 +117,12 @@ function parseOsm(xml){
   if(n.tags.aeroway!=="parking_position")continue;
   const ref=n.tags.ref||n.tags["stand:ref"]||n.tags["parking:ref"]||n.tags.name;
   if(!ref)continue;
-  const cat=String(n.tags["aircraft:reference_code"]||n.tags["aircraft:size"]||"").toUpperCase();
+  const cat=String(n.tags["aircraft:reference_code"]||n.tags["aircraft:size"]||n.tags["aircraft:category"]||"").toUpperCase();
+  const span=Number(n.tags["aircraft:max_wingspan"]||n.tags["max_wingspan"]||"");
+  const airlineTags=[n.tags.airline,n.tags.operator,n.tags.owner,n.tags["airline:icao"],n.tags["operator:icao"]].filter(Boolean).join(";");
   out.push({id:`n:${n.id}`,ref:String(ref).trim(),lat:n.lat,lon:n.lon,
-   kind:"parking_position",size:/^[ABCDEF]$/.test(cat)?cat:null});
+   kind:"parking_position",size:/^[ABCDEF]$/.test(cat)?cat:null,
+   maxWingspan:Number.isFinite(span)&&span>0?span:null,airlineTags});
  }
  const wr=/<way\b([^>]*)>([\s\S]*?)<\/way>/g;
  while((m=wr.exec(xml))){
@@ -87,9 +133,12 @@ function parseOsm(xml){
   const ref=t.ref||t["stand:ref"]||t["parking:ref"]||t.name;
   const last=nodes.get(refs[refs.length-1]);
   if(!ref||!last)continue;
-  const cat=String(t["aircraft:reference_code"]||t["aircraft:size"]||"").toUpperCase();
+  const cat=String(t["aircraft:reference_code"]||t["aircraft:size"]||t["aircraft:category"]||"").toUpperCase();
+  const span=Number(t["aircraft:max_wingspan"]||t["max_wingspan"]||"");
+  const airlineTags=[t.airline,t.operator,t.owner,t["airline:icao"],t["operator:icao"]].filter(Boolean).join(";");
   out.push({id:`w:${m[1]||refs[refs.length-1]}`,ref:String(ref).trim(),lat:last.lat,lon:last.lon,
-   kind:"parking_position",size:/^[ABCDEF]$/.test(cat)?cat:null});
+   kind:"parking_position",size:/^[ABCDEF]$/.test(cat)?cat:null,
+   maxWingspan:Number.isFinite(span)&&span>0?span:null,airlineTags});
  }
  return out;
 }
@@ -130,7 +179,9 @@ async function loadPositions(icao){
   const dup=unique.find(x=>normalizeRef(x.ref)===normalizeRef(p.ref) || haversine(x.lat,x.lon,p.lat,p.lon)<7);
   if(!dup){unique.push(p);continue;}
   // Prefer a node/way with an explicit size tag over an untyped duplicate.
-  if(!dup.size&&p.size)Object.assign(dup,p);
+  if(!dup.size&&p.size)Object.assign(dup,{size:p.size,sizeLabel:p.sizeLabel});
+  if(!dup.maxWingspan&&p.maxWingspan)dup.maxWingspan=p.maxWingspan;
+  if(!dup.airlineTags&&p.airlineTags)dup.airlineTags=p.airlineTags;
  }
  unique.sort((a,b)=>String(a.ref).localeCompare(String(b.ref),undefined,{numeric:true}));
  return {bounds:b,positions:unique};
@@ -182,37 +233,38 @@ function occupancy(gates,pilots,b){
  return out;
 }
 const gateCache=new Map();
-app.get("/api/health",(q,res)=>res.json({ok:true,version:"13.0",vatsimFeedAgeSeconds:vatsimCache.at?Math.round((Date.now()-vatsimCache.at)/1000):null}));
+app.get("/api/airlines",(req,res)=>res.json({airlines:Object.entries(AIRLINES).map(([icao,name])=>({icao,name}))}));
+app.get("/api/health",(q,res)=>res.json({ok:true,version:"14.0",vatsimFeedAgeSeconds:vatsimCache.at?Math.round((Date.now()-vatsimCache.at)/1000):null}));
 app.get("/api/gates",async(req,res)=>{
  const icao=String(req.query.icao||"").trim().toUpperCase();
+ const airline=normalizeAirline(req.query.airline||"");
+ const aircraftInput=String(req.query.aircraft||"").trim();
  if(!/^[A-Z0-9]{4}$/.test(icao))return res.status(400).json({error:"Bitte einen gültigen 4-stelligen ICAO-Code eingeben."});
  try{
   let data=gateCache.get(icao);
-  if(!data||Date.now()-data.at>OSM_TTL){
-   data=await loadPositions(icao);data.at=Date.now();gateCache.set(icao,data);
-  }
+  if(!data||Date.now()-data.at>OSM_TTL){data=await loadPositions(icao);data.at=Date.now();gateCache.set(icao,data);}
   const pilots=await vatsim().catch(()=>[]);
   const occ=occupancy(data.positions,pilots,data.bounds),map=new Map(occ.map(x=>[x.gateIndex,x]));
-  const requestedAircraft=normalizeAircraft(req.query.aircraft||"");
+  const requestedAircraft=normalizeAircraft(aircraftInput);
   const gates=data.positions.map((g,i)=>{
-   const o=map.get(i)||null;
-   // No invented airline assignment. No invented gate size. OSM size is shown
-   // only when OSM explicitly supplied an ICAO reference code.
-   return {...g,occupied:!!o,status:o?"occupied":"available",occupant:o,
-    sizeLabel:g.size?`ICAO Code ${g.size}`:"nicht angegeben"};
+    const o=map.get(i)||null;
+    const airlineMatch=airlineMatches(g.airlineTags,airline);
+    return {...g,occupied:!!o,status:o?"occupied":"available",occupant:o,
+      airlineMatch,sizeLabel:sizeLabel(g)};
   });
-  const filterAirline=String(req.query.airline||"").trim().toUpperCase();
   res.json({
-   version:"13.0",icao,source:"OpenStreetMap parking positions + VATSIM live data",
-   requestedAirline:filterAirline||null,requestedAircraft:req.query.aircraft||null,
-   aircraftInfo:requestedAircraft,bounds:data.bounds,
+   version:"14.0",icao,source:"OpenStreetMap parking positions + VATSIM live data",
+   airlines:Object.entries(AIRLINES).map(([icao,name])=>({icao,name})),
+   requestedAirline:airline||null,requestedAircraft:aircraftInput||null,aircraftInfo:requestedAircraft,
+   bounds:data.bounds,
    totals:{gates:gates.length,available:gates.filter(x=>!x.occupied).length,occupied:occ.length},
    vatsimUpdatedAt:vatsimCache.at?new Date(vatsimCache.at).toISOString():null,
-   debug:{aircraftInsideAirport:pilots.filter(p=>inside(p,data.bounds)).length,assignedAircraft:occ.length},
+   debug:{aircraftInsideAirport:pilots.filter(p=>inside(p,data.bounds)).length,assignedAircraft:occ.length,
+     airlineTaggedGates:gates.filter(g=>g.airlineTags).length,sizeTaggedGates:gates.filter(g=>g.size||g.maxWingspan).length},
    gates
   });
  }catch(e){console.error(e);res.status(502).json({error:"Gate-Daten konnten nicht geladen werden.",details:e.message});}
-});
+});;
 app.get("/api/refresh/:icao",(req,res)=>{
  const i=String(req.params.icao||"").toUpperCase();gateCache.delete(i);airportCache.delete(i);
  for(const k of osmCache.keys())osmCache.delete(k);
